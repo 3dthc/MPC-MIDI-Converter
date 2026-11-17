@@ -1,0 +1,30 @@
+{
+  "name": "MPC MIDI Converter",
+  "vendor": "3dthc",
+  "uid": "MMCv",
+  "version": 1000,
+  "so": "mpc_midi_converter.so",
+  "params": "params.json",
+  "layout": "layout.conf",
+  "art": "html",
+  "effect": true,
+  "cc": false,
+  "nrpn": false,
+  "defines": {
+    "HAS_DISPLAY_REV": 1,
+    "PARAM_TEXT_MAX": 96
+  },
+  "build": {
+    "root": "..",
+    "sources": [
+      "src/engine.c",
+      "src/convert.c"
+    ],
+    "cflags": [
+      "-Isrc"
+    ],
+    "libs": [
+      "-lpthread"
+    ]
+  }
+}

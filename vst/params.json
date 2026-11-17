@@ -1,0 +1,190 @@
+{
+ "name": "MPC MIDI Converter",
+ "params": [
+  {
+   "key": "folder",
+   "name": "Folder",
+   "type": "readout",
+   "display": "string",
+   "poll": true,
+   "automatable": false
+  },
+  {
+   "key": "status",
+   "name": "Status",
+   "type": "readout",
+   "display": "string",
+   "poll": true,
+   "automatable": false
+  },
+  {
+   "key": "page",
+   "name": "Page",
+   "type": "readout",
+   "display": "string",
+   "poll": true,
+   "automatable": false
+  },
+  {
+   "key": "file_1",
+   "name": "File 1",
+   "type": "slot",
+   "display": "string",
+   "automatable": false
+  },
+  {
+   "key": "file_2",
+   "name": "File 2",
+   "type": "slot",
+   "display": "string",
+   "automatable": false
+  },
+  {
+   "key": "file_3",
+   "name": "File 3",
+   "type": "slot",
+   "display": "string",
+   "automatable": false
+  },
+  {
+   "key": "file_4",
+   "name": "File 4",
+   "type": "slot",
+   "display": "string",
+   "automatable": false
+  },
+  {
+   "key": "file_5",
+   "name": "File 5",
+   "type": "slot",
+   "display": "string",
+   "automatable": false
+  },
+  {
+   "key": "file_6",
+   "name": "File 6",
+   "type": "slot",
+   "display": "string",
+   "automatable": false
+  },
+  {
+   "key": "file_7",
+   "name": "File 7",
+   "type": "slot",
+   "display": "string",
+   "automatable": false
+  },
+  {
+   "key": "file_8",
+   "name": "File 8",
+   "type": "slot",
+   "display": "string",
+   "automatable": false
+  },
+  {
+   "key": "up",
+   "name": "Up",
+   "type": "trigger",
+   "momentary": true,
+   "automatable": false
+  },
+  {
+   "key": "prev",
+   "name": "Prev Page",
+   "type": "trigger",
+   "momentary": true,
+   "automatable": false
+  },
+  {
+   "key": "next",
+   "name": "Next Page",
+   "type": "trigger",
+   "momentary": true,
+   "automatable": false
+  },
+  {
+   "key": "refresh",
+   "name": "Refresh",
+   "type": "trigger",
+   "momentary": true,
+   "automatable": false
+  },
+  {
+   "key": "convert",
+   "name": "Convert File",
+   "type": "trigger",
+   "momentary": true,
+   "automatable": false
+  },
+  {
+   "key": "convert_all",
+   "name": "Convert Folder",
+   "type": "trigger",
+   "momentary": true,
+   "automatable": false
+  },
+  {
+   "key": "tracks",
+   "name": "Tracks",
+   "options": [
+    "Merge",
+    "Split"
+   ]
+  },
+  {
+   "key": "drums",
+   "name": "Drum Map",
+   "options": [
+    "Off",
+    "GM to Pads"
+   ]
+  },
+  {
+   "key": "quantize",
+   "name": "Quantize",
+   "options": [
+    "Off",
+    "1/4",
+    "1/8",
+    "1/8T",
+    "1/16",
+    "1/16T",
+    "1/32"
+   ]
+  },
+  {
+   "key": "transpose",
+   "name": "Transpose",
+   "min": -24,
+   "max": 24,
+   "default": 0,
+   "display": "int",
+   "unit": "st"
+  },
+  {
+   "key": "trim",
+   "name": "Trim Start",
+   "options": [
+    "Off",
+    "On"
+   ]
+  },
+  {
+   "key": "save_to",
+   "name": "Save To",
+   "options": [
+    "MIDI Import",
+    "Next to File"
+   ]
+  },
+  {
+   "key": "bpm_name",
+   "name": "BPM in Name",
+   "options": [
+    "Off",
+    "On"
+   ],
+   "default": "On"
+  }
+ ]
+}
