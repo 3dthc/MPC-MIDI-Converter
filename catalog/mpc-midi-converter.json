@@ -1,0 +1,20 @@
+{
+  "id": "mpc-midi-converter",
+  "name": "MPC MIDI Converter",
+  "author": "3dthc",
+  "repo": "3dthc/MPC-MIDI-Converter",
+  "kind": "instrument",
+  "style": "utility",
+  "tags": [
+    "midi",
+    "converter",
+    "mpcpattern",
+    "file-browser",
+    "batch",
+    "drum-map"
+  ],
+  "license": "MIT",
+  "summary": "Converts MIDI files (.mid, .midi) to MPC patterns right on the MPC, no computer needed. Browse your SD card and drives, convert one file or a whole pack with its subfolders, and load the patterns onto any track. Split tracks into separate patterns, map General MIDI drums onto pads, quantize, and get the file's tempo in each pattern's name.",
+  "asset_pattern": "MPC-MIDI-Converter-*-mpc-armv7.zip",
+  "tip": "https://ko-fi.com/3dthc"
+}
