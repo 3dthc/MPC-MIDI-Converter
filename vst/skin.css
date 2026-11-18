@@ -2,8 +2,8 @@
 :root {
   --radius: 12px;
   --sheen: 0.06;
-  --label-size: 13px;
-  --seg-size: 14px;
+  --label-size: 21px;
+  --seg-size: 22px;
   --shadow: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.55));
 }
 
@@ -26,7 +26,7 @@
 /* buttons: raised graphite, a hairline top light; the primary ones are amber with dark text */
 .button-bg { stroke: rgba(255, 255, 255, 0.09); stroke-width: 1; rx: 14px;
              filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.5)); }
-.button-tx { font-size: 15px !important; font-weight: 700; letter-spacing: 0.14em; fill: #eceef2; }
+.button-tx { font-size: 21px !important; font-weight: 700; letter-spacing: 0.02em; fill: #eceef2; }
 .button[style*="e8a23a"] .button-bg { stroke: rgba(255, 230, 180, 0.35); }
 .button[style*="e8a23a"] .button-tx { fill: #1b1206; }
 
@@ -37,3 +37,7 @@
 /* knob: dark cap, amber arc */
 .knob-face { fill: #2a2d34; filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.6)); }
 .knob-track { stroke: rgba(255, 255, 255, 0.08); }
+
+/* image buttons: label colours (the amber ones carry dark text) */
+.button text { font-size: 21px; font-weight: 700; letter-spacing: 0.02em; }
+.seg-bg { rx: 12px; }

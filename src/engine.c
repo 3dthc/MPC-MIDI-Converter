@@ -21,8 +21,8 @@
 #define BATCH_DEPTH 4             /* folder levels a batch goes into below the chosen folder */
 #define OUT_DIR "MIDI Import"
 
-static const int QUANT[] = {0, 960, 480, 320, 240, 160, 120};   /* Off, 1/4, 1/8, 1/8T, 1/16, 1/16T, 1/32 */
-#define NQUANT 7
+static const int QUANT[] = {0, 480, 240, 120};   /* Off, 1/8, 1/16, 1/32 */
+#define NQUANT 4
 
 typedef struct { char name[256]; int dir; } ent_t;
 
@@ -41,7 +41,7 @@ typedef struct {
     char status[128];
     unsigned rev;
 
-    int split, drums, quant, transpose, trim, save_next, bpm_name;
+    int split, drums, quant, transpose, trim, save_next, bpm_name, help;
 } st_t;
 
 static void bump(st_t *s) { s->rev++; }
@@ -384,6 +384,7 @@ static void set_param(void *inst, const char *key, const char *val) {
     else if (!strcmp(key, "trim")) s->trim = clampi((int)v, 0, 1);
     else if (!strcmp(key, "save_to")) s->save_next = clampi((int)v, 0, 1);
     else if (!strcmp(key, "bpm_name")) s->bpm_name = clampi((int)v, 0, 1);
+    else if (!strcmp(key, "help")) { s->help = clampi((int)v, 0, 1); bump(s); }
     else if (!strcmp(key, "state")) {
         int o[7];
         const char *dl = strstr(val, "\ndir=");
@@ -452,6 +453,7 @@ static int get_param(void *inst, const char *key, char *b, int n) {
     else if (!strcmp(key, "trim")) r = snprintf(b, n, "%d", s->trim);
     else if (!strcmp(key, "save_to")) r = snprintf(b, n, "%d", s->save_next);
     else if (!strcmp(key, "bpm_name")) r = snprintf(b, n, "%d", s->bpm_name);
+    else if (!strcmp(key, "help")) r = snprintf(b, n, "%d", s->help);
     else if (!strcmp(key, "state"))
         r = snprintf(b, n, "opts=%d,%d,%d,%d,%d,%d,%d\ndir=%s\n", s->split, s->drums, s->quant, s->transpose, s->trim,
                      s->save_next, s->bpm_name, s->dir);

@@ -83,7 +83,7 @@
   },
   {
    "key": "up",
-   "name": "Up",
+   "name": "Back",
    "type": "trigger",
    "momentary": true,
    "automatable": false
@@ -125,10 +125,10 @@
   },
   {
    "key": "tracks",
-   "name": "Tracks",
+   "name": "Split Tracks",
    "options": [
-    "Merge",
-    "Split"
+    "Off",
+    "On"
    ]
   },
   {
@@ -136,7 +136,7 @@
    "name": "Drum Map",
    "options": [
     "Off",
-    "GM to Pads"
+    "On"
    ]
   },
   {
@@ -144,11 +144,8 @@
    "name": "Quantize",
    "options": [
     "Off",
-    "1/4",
     "1/8",
-    "1/8T",
     "1/16",
-    "1/16T",
     "1/32"
    ]
   },
@@ -185,6 +182,15 @@
     "On"
    ],
    "default": "On"
+  },
+  {
+   "key": "help",
+   "name": "How To",
+   "options": [
+    "Off",
+    "On"
+   ],
+   "automatable": false
   }
  ]
 }
