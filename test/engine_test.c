@@ -16,9 +16,10 @@ static int row_of(const char *name) {
     for (int r = 1; r <= 8; r++) { char k[24]; sprintf(k, "file_%d", r); if (strstr(get(k), name)) return r; }
     return 0;
 }
+static void tap_row(int r) { char k[24]; sprintf(k, "row_%d", r); E->set_param(I, k, "1"); E->set_param(I, k, "0"); }
 static int fails;
 static void check(int ok, const char *what) { printf("%s %s\n", ok ? "ok  " : "FAIL", what); fails += !ok; }
-static void open_row(const char *name) { int r = row_of(name); char k[24]; sprintf(k, "file_%d", r); if (r) tap(k); settle(); }
+static void open_row(const char *name) { int r = row_of(name); if (r) tap_row(r); settle(); }
 int main(void) {
     E = mpc_engine();
     I = E->create(NULL); settle();
@@ -32,10 +33,10 @@ int main(void) {
     printf("     rows: [%s] ", get("file_1")); printf("[%s] ", get("file_2")); printf("[%s]\n", get("file_3"));
     check(row_of("Sub") == 1, "folders listed first");
     check(row_of("notes.txt") == 0, "non-MIDI files hidden");
-    { int r0 = row_of("Sub"); char k0[24]; sprintf(k0, "file_%d", r0);
-      E->set_param(I, k0, "0"); settle();   /* a tap reported as 0 (MPC still shows the row as on) */
-      check(strstr(get("folder"), "Sub") != NULL, "a tap that arrives as 0 still opens the folder");
-      usleep(300000); tap("up"); settle(); }
+    open_row("Sub");
+    check(strstr(get("folder"), "Sub") != NULL, "a row tap opens the folder");
+    tap("up"); settle();
+    check(strstr(get("folder"), "Pack") != NULL, "BACK returns");
     E->set_param(I, "rows", "1");
     check(!strcmp(get("view"), "1"), "list size More switches the view");
     check(row_of("multi_f1") > 0, "8 rows: files on page 1");
@@ -46,8 +47,9 @@ int main(void) {
     E->set_param(I, "help", "0");
     tap("convert"); settle();
     check(strstr(get("status"), "Pick a MIDI") != NULL, "convert with nothing picked asks for a file");
-    int r = row_of("multi_f1"); char k[24]; sprintf(k, "file_%d", r); tap(k); sprintf(k, "file_%d_on", r);
-    check(!strcmp(get(k), "1"), "picked row lights");
+    int r = row_of("multi_f1"); tap_row(r); settle();
+    char want[8]; sprintf(want, "%d", r);
+    check(!strcmp(get("selrow"), want), "picked row lights");
     E->set_param(I, "tracks", "1");
     tap("convert"); settle();
     printf("     status: %s\n", get("status"));

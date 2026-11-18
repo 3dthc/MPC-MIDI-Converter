@@ -366,7 +366,24 @@ static void set_param(void *inst, const char *key, const char *val) {
     st_t *s = inst;
     double v = atof(val);
     pthread_mutex_lock(&s->mu);
-    if (!strncmp(key, "file_", 5) && key[5] >= '1' && key[5] <= '8' && !key[6]) {
+    if (!strncmp(key, "row_", 4) && key[4] >= '1' && key[4] <= '8' && !key[5]) {
+        /* A row is a drawn button (a momentary trigger: the wrapper drops the second press of one touch).
+         * Like MPC's browser: a folder opens on a tap, a MIDI file is picked (and a tap on the picked file converts it). */
+        if (v > 0.5 && !s->help && key[4] - '1' < rows_of(s)) {
+            int i = s->page * rows_of(s) + (key[4] - '1');
+            if (i < s->nent) {
+                if (s->ent[i].dir) post(s, CMD_ENTER, s->ent[i].name);
+                else if (!s->busy) {
+                    if (s->sel == i) post(s, CMD_CONVERT, s->ent[i].name);
+                    else {
+                        s->sel = i;
+                        snprintf(s->status, sizeof s->status, "Tap again or CONVERT FILE");
+                    }
+                }
+            }
+            bump(s);
+        }
+    } else if (!strncmp(key, "file_", 5) && key[5] >= '1' && key[5] <= '8' && !key[6]) {
         /* A tap on a list row. MPC's row is a toggle, so a tap can arrive as 1 or as 0 (a row MPC still shows as on
          * from the last tap); the wrapper already drops its own echoes. Any value is a tap, and a second call within
          * TAP_MS (one touch reported twice) is ignored. */
@@ -483,6 +500,12 @@ static int get_param(void *inst, const char *key, char *b, int n) {
     else if (!strcmp(key, "bpm_name")) r = snprintf(b, n, "%d", s->bpm_name);
     else if (!strcmp(key, "help")) r = snprintf(b, n, "%d", s->help);
     else if (!strcmp(key, "rows")) r = snprintf(b, n, "%d", s->more);
+    else if (!strcmp(key, "selrow")) {   /* which row draws the picked-file highlight: 0 none, 1-5 big list, 6-13 long list */
+        int on = s->sel >= 0 && !s->help && s->sel / rows_of(s) == s->page;
+        r = snprintf(b, n, "%d", on ? (s->more ? 6 : 1) + s->sel % rows_of(s) : 0);
+    } else if (!strcmp(key, "row_1") || !strcmp(key, "row_2") || !strcmp(key, "row_3") || !strcmp(key, "row_4") ||
+               !strcmp(key, "row_5") || !strcmp(key, "row_6") || !strcmp(key, "row_7") || !strcmp(key, "row_8"))
+        r = snprintf(b, n, "0");
     else if (!strcmp(key, "view")) r = snprintf(b, n, "%d", s->help ? 2 : s->more);   /* drives the page: set by the engine only */
     else if (!strcmp(key, "state"))
         r = snprintf(b, n, "opts=%d,%d,%d,%d,%d,%d,%d,%d\ndir=%s\n", s->split, s->drums, s->quant, s->transpose, s->trim,

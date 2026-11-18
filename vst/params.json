@@ -28,58 +28,66 @@
   {
    "key": "file_1",
    "name": "File 1",
-   "type": "slot",
+   "type": "readout",
    "display": "string",
-   "automatable": false
+   "automatable": false,
+   "poll": true
   },
   {
    "key": "file_2",
    "name": "File 2",
-   "type": "slot",
+   "type": "readout",
    "display": "string",
-   "automatable": false
+   "automatable": false,
+   "poll": true
   },
   {
    "key": "file_3",
    "name": "File 3",
-   "type": "slot",
+   "type": "readout",
    "display": "string",
-   "automatable": false
+   "automatable": false,
+   "poll": true
   },
   {
    "key": "file_4",
    "name": "File 4",
-   "type": "slot",
+   "type": "readout",
    "display": "string",
-   "automatable": false
+   "automatable": false,
+   "poll": true
   },
   {
    "key": "file_5",
    "name": "File 5",
-   "type": "slot",
+   "type": "readout",
    "display": "string",
-   "automatable": false
+   "automatable": false,
+   "poll": true
   },
   {
    "key": "file_6",
    "name": "File 6",
-   "type": "slot",
+   "type": "readout",
    "display": "string",
-   "automatable": false
+   "automatable": false,
+   "poll": true
   },
   {
    "key": "file_7",
    "name": "File 7",
-   "type": "slot",
+   "type": "readout",
    "display": "string",
-   "automatable": false
+   "automatable": false,
+   "poll": true
   },
   {
    "key": "file_8",
    "name": "File 8",
-   "type": "slot",
+   "type": "readout",
    "display": "string",
-   "automatable": false
+   "automatable": false,
+   "poll": true
   },
   {
    "key": "up",
@@ -208,6 +216,83 @@
     "big",
     "more",
     "help"
+   ],
+   "automatable": false
+  },
+  {
+   "key": "row_1",
+   "name": "Row 1",
+   "type": "trigger",
+   "momentary": true,
+   "automatable": false
+  },
+  {
+   "key": "row_2",
+   "name": "Row 2",
+   "type": "trigger",
+   "momentary": true,
+   "automatable": false
+  },
+  {
+   "key": "row_3",
+   "name": "Row 3",
+   "type": "trigger",
+   "momentary": true,
+   "automatable": false
+  },
+  {
+   "key": "row_4",
+   "name": "Row 4",
+   "type": "trigger",
+   "momentary": true,
+   "automatable": false
+  },
+  {
+   "key": "row_5",
+   "name": "Row 5",
+   "type": "trigger",
+   "momentary": true,
+   "automatable": false
+  },
+  {
+   "key": "row_6",
+   "name": "Row 6",
+   "type": "trigger",
+   "momentary": true,
+   "automatable": false
+  },
+  {
+   "key": "row_7",
+   "name": "Row 7",
+   "type": "trigger",
+   "momentary": true,
+   "automatable": false
+  },
+  {
+   "key": "row_8",
+   "name": "Row 8",
+   "type": "trigger",
+   "momentary": true,
+   "automatable": false
+  },
+  {
+   "key": "selrow",
+   "name": "Selected Row",
+   "options": [
+    "none",
+    "b1",
+    "b2",
+    "b3",
+    "b4",
+    "b5",
+    "m1",
+    "m2",
+    "m3",
+    "m4",
+    "m5",
+    "m6",
+    "m7",
+    "m8"
    ],
    "automatable": false
   }
