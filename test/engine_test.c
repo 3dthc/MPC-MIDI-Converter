@@ -16,7 +16,7 @@ static int row_of(const char *name) {
     for (int r = 1; r <= 8; r++) { char k[24]; sprintf(k, "file_%d", r); if (strstr(get(k), name)) return r; }
     return 0;
 }
-static void tap_row(int r) { char k[24]; sprintf(k, "row_%d", r); E->set_param(I, k, "1"); E->set_param(I, k, "0"); }
+static void tap_row(int r) { usleep(550000); char k[24]; sprintf(k, "row_%d", r); E->set_param(I, k, "1"); E->set_param(I, k, "0"); }
 static int fails;
 static void check(int ok, const char *what) { printf("%s %s\n", ok ? "ok  " : "FAIL", what); fails += !ok; }
 static void open_row(const char *name) { int r = row_of(name); if (r) tap_row(r); settle(); }
@@ -33,6 +33,12 @@ int main(void) {
     printf("     rows: [%s] ", get("file_1")); printf("[%s] ", get("file_2")); printf("[%s]\n", get("file_3"));
     check(row_of("Sub") == 1, "folders listed first");
     check(row_of("notes.txt") == 0, "non-MIDI files hidden");
+    { int r1 = row_of("Sub"); char k1[24]; sprintf(k1, "row_%d", r1);
+      usleep(550000); E->set_param(I, k1, "1"); usleep(50000);
+      check(strstr(get("folder"), "Sub") != NULL, "a row tap opens the folder");
+      E->set_param(I, "row_1", "1"); settle();   /* the same touch landing on the new list */
+      check(strstr(get("folder"), "Deeper") == NULL, "a tap just after a folder opens is ignored");
+      tap("up"); settle(); }
     open_row("Sub");
     check(strstr(get("folder"), "Sub") != NULL, "a row tap opens the folder");
     tap("up"); settle();

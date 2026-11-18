@@ -224,56 +224,64 @@
    "name": "Row 1",
    "type": "trigger",
    "momentary": true,
-   "automatable": false
+   "automatable": false,
+   "debounce_ms": 400
   },
   {
    "key": "row_2",
    "name": "Row 2",
    "type": "trigger",
    "momentary": true,
-   "automatable": false
+   "automatable": false,
+   "debounce_ms": 400
   },
   {
    "key": "row_3",
    "name": "Row 3",
    "type": "trigger",
    "momentary": true,
-   "automatable": false
+   "automatable": false,
+   "debounce_ms": 400
   },
   {
    "key": "row_4",
    "name": "Row 4",
    "type": "trigger",
    "momentary": true,
-   "automatable": false
+   "automatable": false,
+   "debounce_ms": 400
   },
   {
    "key": "row_5",
    "name": "Row 5",
    "type": "trigger",
    "momentary": true,
-   "automatable": false
+   "automatable": false,
+   "debounce_ms": 400
   },
   {
    "key": "row_6",
    "name": "Row 6",
    "type": "trigger",
    "momentary": true,
-   "automatable": false
+   "automatable": false,
+   "debounce_ms": 400
   },
   {
    "key": "row_7",
    "name": "Row 7",
    "type": "trigger",
    "momentary": true,
-   "automatable": false
+   "automatable": false,
+   "debounce_ms": 400
   },
   {
    "key": "row_8",
    "name": "Row 8",
    "type": "trigger",
    "momentary": true,
-   "automatable": false
+   "automatable": false,
+   "debounce_ms": 400
   },
   {
    "key": "selrow",

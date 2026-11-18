@@ -28,5 +28,7 @@ check "300 damaged files: no memory errors" '[ $hits = 0 ]'
 D="$W/root"; mkdir -p "$D/TESTDRIVE/Pack/Sub/Deeper" "$D/az01-internal" "$D/az01-internal-sd"
 cp multi_f1.mid multi_f0.mid "$D/TESTDRIVE/Pack/"; cp test_drums_90bpm.mid "$D/TESTDRIVE/Pack/Sub/Drums.MIDI"
 cp leadin.mid "$D/TESTDRIVE/Pack/Sub/Deeper/"; cp notmidi.mid "$D/TESTDRIVE/Pack/broken.mid"; echo hi > "$D/TESTDRIVE/Pack/notes.txt"
-gcc $SAN -DMMC_ROOT="\"$D\"" -I"$MV/wrapper" -I"$R/src" -o et "$T/engine_test.c" "$R/src/engine.c" "$R/src/convert.c" -lpthread
+gcc $SAN -DMMC_ROOT="\"$D\"" -DMMC_OUT_ROOT="\"$D/PLUGDRIVE\"" -I"$MV/wrapper" -I"$R/src" -o et "$T/engine_test.c" "$R/src/engine.c" "$R/src/convert.c" -lpthread
 ./et
+check "patterns land in MIDI Converts on the plugin's drive" '[ -n "$(ls "$D/PLUGDRIVE/MIDI Converts/Pack" 2>/dev/null)" ]'
+check "nothing written next to the MIDI files" '[ -z "$(find "$D/TESTDRIVE" -name "*.mpcpattern")" ]'

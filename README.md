@@ -8,25 +8,26 @@ This is the **MPC plugin**. Windows (`.exe`) and Mac (`.dmg`) versions are plann
 
 ## Using it
 
-1. Add **MPC MIDI Converter** to any track as an insert effect. It passes audio through untouched.
-2. Browse the drives in the list: tap a folder to open it, **UP** to go back.
-3. Tap a MIDI file to pick it, then **CONVERT FILE**. Or tap **CONVERT FOLDER** to convert every MIDI file in the folder you
-   are in, and in its subfolders.
-4. Find the patterns in the **MIDI Import** folder at the root of the same drive (or next to the MIDI files, see SAVE TO).
-   Load one onto a track from the browser.
+1. Add **MPC MIDI Converter** to a track (it is listed with the instruments).
+2. Tap a drive, then tap folders to open them. **BACK** goes up a folder; the arrows change page.
+3. Tap a MIDI file to pick it (it lights up), then tap it again or tap **CONVERT FILE**. **CONVERT FOLDER** converts
+   every MIDI file in the folder you are in, and in its subfolders.
+4. Find the patterns in the **MIDI Converts** folder at the root of the drive the plugin is installed on (outside the
+   plugin's own folder, so updating the plugin never touches them). Load one onto a track from MPC's browser.
+
+**HOW TO** shows these steps on the plugin's page.
 
 ## Options
 
 | Option | What it does |
 |---|---|
-| **Tracks** | **Merge** puts the whole file in one pattern. **Split** makes one pattern per MIDI track (per channel, for single-track files), named after the track. |
-| **Drum map** | **GM to Pads** moves General MIDI drum notes onto MPC pads (layout below), for drum loops made in other software. |
-| **Quantize** | Snaps note starts to the grid you pick. |
-| **Transpose** | Shifts notes up or down, ±24 semitones (not applied to drum-mapped notes). |
-| **Trim start** | Removes empty bars before the first note. |
-| **Save to** | **MIDI Import** (a folder at the root of the drive; a folder conversion keeps the pack's own folder structure) or **Next to File**. |
+| **Split tracks** | **Off** puts the whole file in one pattern. **On** makes one pattern per MIDI track (per channel, for single-track files), named after the track. |
+| **Drum map** | **On** moves General MIDI drum notes onto MPC pads (layout below), for drum loops made in other software. |
+| **Quantize** | Snaps note starts to 1/8, 1/16 or 1/32. |
+| **List size** | **Big** shows 5 large rows; **More** shows 8. |
 
 Patterns do not store tempo, so the file's tempo is added to the pattern's name, for example `Groove 01 (92 BPM).mpcpattern`.
+A folder conversion keeps the pack's own folder structure inside MIDI Converts.
 
 ### Drum map (GM to Pads)
 

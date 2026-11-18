@@ -2,6 +2,7 @@
  * files (src/convert.c), one at a time or a whole folder at once. An audio effect that passes its input through
  * untouched, so it can sit on any track. All disk work runs on one worker thread; set_param only posts a command,
  * get_param only copies text under a short lock. MIT licence. */
+#define _GNU_SOURCE
 #include <dirent.h>
 #include <errno.h>
 #include <pthread.h>
@@ -13,6 +14,7 @@
 #include <time.h>
 #include "engine.h"
 #include "convert.h"
+#include "plugin_dir.h"
 
 #ifndef MMC_ROOT
 #define MMC_ROOT "/media"        /* MPC drives are mounted here; the top of the browser */
@@ -21,8 +23,10 @@
 #define ROWS_MORE 8
 #define MAX_ENT 4000
 #define BATCH_DEPTH 4             /* folder levels a batch goes into below the chosen folder */
-#define OUT_DIR "MIDI Import"
+#define OUT_DIR "MIDI Converts"
 #define TAP_MS 250                /* one touch on a list row is one tap */
+#define SETTLE_MS 500             /* after a folder opens, taps wait this long: the finger that opened it is still lifting */
+#define AGAIN_MS 400              /* a second tap on the picked file converts it only after this gap */
 
 static const int QUANT[] = {0, 480, 240, 120};   /* Off, 1/8, 1/16, 1/32 */
 #define NQUANT 4
@@ -45,7 +49,8 @@ typedef struct {
     unsigned rev;
 
     int split, drums, quant, transpose, trim, save_next, bpm_name, help, more;
-    long long last_tap_ms;
+    long long last_tap_ms, nav_ms, pick_ms;
+    char out_root[1024];          /* where "MIDI Converts" goes: the root of the drive the plugin is installed on */
 } st_t;
 
 static void bump(st_t *s) { s->rev++; }
@@ -134,6 +139,7 @@ static int list_dir(st_t *s, const char *dir, const char *select) {
     s->ent = e; s->nent = n;
     snprintf(s->dir, sizeof s->dir, "%s", dir);
     s->page = 0; s->sel = -1;
+    s->nav_ms = now_ms();
     if (select)
         for (int i = 0; i < n; i++)
             if (!strcmp(e[i].name, select)) { s->page = i / rows_of(s); s->sel = e[i].dir ? -1 : i; break; }
@@ -174,12 +180,13 @@ static void base_name(const char *path, char *out, int n) {
     snprintf(out, n, "%s", sl ? sl + 1 : path);
 }
 
-/* Output folder for a MIDI file in `src_dir`: next to it, or <drive>/MIDI Import[/<rel>]. */
-static int out_dir_for(const char *src_dir, const char *rel, int save_next, char *out, int n) {
+/* Output folder for a MIDI file in `src_dir`: next to it, or <plugin's drive>/MIDI Converts[/<rel>]. */
+static int out_dir_for(const st_t *s, const char *src_dir, const char *rel, int save_next, char *out, int n) {
     if (save_next) snprintf(out, n, "%s", src_dir);
     else {
         char root[1024];
-        drive_root(src_dir, root, sizeof root);
+        if (s->out_root[0]) snprintf(root, sizeof root, "%s", s->out_root);
+        else drive_root(src_dir, root, sizeof root);   /* the plugin's own place is unknown: the MIDI file's drive */
         if (rel && rel[0]) snprintf(out, n, "%s/" OUT_DIR "/%s", root, rel);
         else snprintf(out, n, "%s/" OUT_DIR, root);
     }
@@ -191,7 +198,7 @@ static void do_convert(st_t *s, const char *dir, const char *name) {
     opts_of(s, &o, &save_next);
     char in[2100], out[2100], err[96] = "";
     snprintf(in, sizeof in, "%s/%s", dir, name);
-    if (out_dir_for(dir, NULL, save_next, out, sizeof out)) { set_status(s, "Can't make the output folder"); return; }
+    if (out_dir_for(s, dir, NULL, save_next, out, sizeof out)) { set_status(s, "Can't make the output folder"); return; }
     int r = mmc_convert_file(in, out, &o, err, sizeof err);
     if (r < 0) {
         char m[128];
@@ -242,7 +249,7 @@ static void batch_walk(st_t *s, const char *dir, const char *rel, int depth, con
         char m[128];
         snprintf(m, sizeof m, "Converting %d: %.100s", t->files, e[i].name);
         set_status(s, m);
-        if (out_dir_for(dir, rel, save_next, out, sizeof out)) { t->failed++; continue; }
+        if (out_dir_for(s, dir, rel, save_next, out, sizeof out)) { t->failed++; continue; }
         int r = mmc_convert_file(path, out, o, err, sizeof err);
         if (r < 0) t->failed++;
         else t->patterns += r;
@@ -328,6 +335,22 @@ static void post(st_t *s, int cmd, const char *arg) {
     pthread_cond_signal(&s->cv);
 }
 
+/* The root of the drive the plugin is installed on (/media/<drive>, or /sdcard), so converted patterns sit on the
+ * same drive as the plugin but outside its folder: updating or removing the plugin never touches them. */
+static void plugin_drive(char *out, int n) {
+    out[0] = 0;
+#ifdef MMC_OUT_ROOT
+    snprintf(out, n, "%s", MMC_OUT_ROOT);
+#else
+    char dir[1024];
+    if (!mpc_plugin_dir(dir, sizeof dir)) return;
+    if (!strncmp(dir, "/media/", 7)) {
+        const char *sl = strchr(dir + 7, '/');
+        snprintf(out, n, "%.*s", sl ? (int)(sl - dir) : (int)strlen(dir), dir);
+    } else if (!strncmp(dir, "/sdcard", 7)) snprintf(out, n, "/sdcard");
+#endif
+}
+
 static void *create(const char *data_dir) {
     (void)data_dir;
     st_t *s = calloc(1, sizeof *s);
@@ -337,6 +360,7 @@ static void *create(const char *data_dir) {
     snprintf(s->dir, sizeof s->dir, "%s", MMC_ROOT);
     s->sel = -1;
     s->bpm_name = 1;
+    plugin_drive(s->out_root, sizeof s->out_root);
     snprintf(s->status, sizeof s->status, "Loading...");
     s->cmd = CMD_LIST;
     if (pthread_create(&s->th, NULL, worker, s)) {
@@ -369,14 +393,16 @@ static void set_param(void *inst, const char *key, const char *val) {
     if (!strncmp(key, "row_", 4) && key[4] >= '1' && key[4] <= '8' && !key[5]) {
         /* A row is a drawn button (a momentary trigger: the wrapper drops the second press of one touch).
          * Like MPC's browser: a folder opens on a tap, a MIDI file is picked (and a tap on the picked file converts it). */
-        if (v > 0.5 && !s->help && key[4] - '1' < rows_of(s)) {
+        long long t = now_ms();
+        if (v > 0.5 && !s->help && key[4] - '1' < rows_of(s) && t - s->nav_ms >= SETTLE_MS) {
             int i = s->page * rows_of(s) + (key[4] - '1');
             if (i < s->nent) {
                 if (s->ent[i].dir) post(s, CMD_ENTER, s->ent[i].name);
                 else if (!s->busy) {
-                    if (s->sel == i) post(s, CMD_CONVERT, s->ent[i].name);
+                    if (s->sel == i) { if (t - s->pick_ms >= AGAIN_MS) post(s, CMD_CONVERT, s->ent[i].name); }
                     else {
                         s->sel = i;
+                        s->pick_ms = t;
                         snprintf(s->status, sizeof s->status, "Tap again or CONVERT FILE");
                     }
                 }
@@ -403,8 +429,8 @@ static void set_param(void *inst, const char *key, const char *val) {
             bump(s);
         }
     } else if (!strcmp(key, "up")) { if (v > 0.5) post(s, CMD_UP, NULL); }
-    else if (!strcmp(key, "prev")) { if (v > 0.5 && s->page > 0) { s->page--; bump(s); } }
-    else if (!strcmp(key, "next")) { if (v > 0.5 && (s->page + 1) * rows_of(s) < s->nent) { s->page++; bump(s); } }
+    else if (!strcmp(key, "prev")) { if (v > 0.5 && s->page > 0) { s->page--; s->nav_ms = now_ms(); bump(s); } }
+    else if (!strcmp(key, "next")) { if (v > 0.5 && (s->page + 1) * rows_of(s) < s->nent) { s->page++; s->nav_ms = now_ms(); bump(s); } }
     else if (!strcmp(key, "refresh")) { if (v > 0.5) post(s, CMD_LIST, s->dir); }
     else if (!strcmp(key, "convert")) {
         if (v > 0.5) {
