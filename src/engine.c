@@ -10,6 +10,7 @@
 #include <string.h>
 #include <strings.h>
 #include <sys/stat.h>
+#include <time.h>
 #include "engine.h"
 #include "convert.h"
 
@@ -21,6 +22,7 @@
 #define MAX_ENT 4000
 #define BATCH_DEPTH 4             /* folder levels a batch goes into below the chosen folder */
 #define OUT_DIR "MIDI Import"
+#define TAP_MS 250                /* one touch on a list row is one tap */
 
 static const int QUANT[] = {0, 480, 240, 120};   /* Off, 1/8, 1/16, 1/32 */
 #define NQUANT 4
@@ -43,9 +45,16 @@ typedef struct {
     unsigned rev;
 
     int split, drums, quant, transpose, trim, save_next, bpm_name, help, more;
+    long long last_tap_ms;
 } st_t;
 
 static void bump(st_t *s) { s->rev++; }
+
+static long long now_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
 static int rows_of(const st_t *s) { return s->more ? ROWS_MORE : ROWS_BIG; }
 
 static void set_status(st_t *s, const char *msg) {
@@ -358,7 +367,13 @@ static void set_param(void *inst, const char *key, const char *val) {
     double v = atof(val);
     pthread_mutex_lock(&s->mu);
     if (!strncmp(key, "file_", 5) && key[5] >= '1' && key[5] <= '8' && !key[6]) {
-        if (v > 0.5) {   /* a tap on a list row (the release and the host's echo come as 0) */
+        /* A tap on a list row. MPC's row is a toggle, so a tap can arrive as 1 or as 0 (a row MPC still shows as on
+         * from the last tap); the wrapper already drops its own echoes. Any value is a tap, and a second call within
+         * TAP_MS (one touch reported twice) is ignored. */
+        long long t = now_ms();
+        int fresh = t - s->last_tap_ms >= TAP_MS;
+        if (fresh) s->last_tap_ms = t;
+        if (fresh) {
             if (key[5] - '1' >= rows_of(s)) { pthread_mutex_unlock(&s->mu); return; }
             int i = s->page * rows_of(s) + (key[5] - '1');
             if (i < s->nent) {

@@ -8,7 +8,7 @@ static const mpc_engine_t *E;
 static void *I;
 static char buf[256];
 static const char *get(const char *k) { buf[0] = 0; E->get_param(I, k, buf, sizeof buf); return buf; }
-static void tap(const char *k) { E->set_param(I, k, "1"); E->set_param(I, k, "0"); }
+static void tap(const char *k) { E->set_param(I, k, "1"); E->set_param(I, k, "0"); usleep(300000); }
 static void settle(void) {   /* wait until the worker is idle: status stops changing */
     char last[256] = "x"; for (int i = 0; i < 200; i++) { usleep(20000); if (!strcmp(last, get("display_rev"))) return; strcpy(last, buf); }
 }
@@ -32,6 +32,10 @@ int main(void) {
     printf("     rows: [%s] ", get("file_1")); printf("[%s] ", get("file_2")); printf("[%s]\n", get("file_3"));
     check(row_of("Sub") == 1, "folders listed first");
     check(row_of("notes.txt") == 0, "non-MIDI files hidden");
+    { int r0 = row_of("Sub"); char k0[24]; sprintf(k0, "file_%d", r0);
+      E->set_param(I, k0, "0"); settle();   /* a tap reported as 0 (MPC still shows the row as on) */
+      check(strstr(get("folder"), "Sub") != NULL, "a tap that arrives as 0 still opens the folder");
+      usleep(300000); tap("up"); settle(); }
     E->set_param(I, "rows", "1");
     check(!strcmp(get("view"), "1"), "list size More switches the view");
     check(row_of("multi_f1") > 0, "8 rows: files on page 1");
@@ -61,7 +65,7 @@ int main(void) {
     E->set_param(I, "state", st); settle();
     check(!strcmp(get("folder"), "TESTDRIVE/Pack"), "state restores the folder");
     E->destroy(I2); I = keep;
-    for (int i = 0; i < 2000; i++) { tap("next"); tap("prev"); tap("up"); }   /* tap storm while the worker runs */
+    for (int i = 0; i < 2000; i++) { E->set_param(I, "next", "1"); E->set_param(I, "prev", "1"); E->set_param(I, "up", "1"); E->set_param(I, "file_1", "1"); }   /* tap storm while the worker runs */
     E->destroy(I);
     printf(fails ? "FAILED\n" : "PASSED\n");
     return fails != 0;
