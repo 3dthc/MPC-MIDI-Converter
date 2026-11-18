@@ -1,0 +1,6 @@
+# MouseMIDI addin - drive MPC editing from a USB mouse. Plain assignments only (install.sh sources this as root).
+ADDIN_ID=mousemidi
+ADDIN_NAME="MouseMIDI"
+ADDIN_SO=mousemidi.so
+ADDIN_CONF=mousemidi.conf
+ADDIN_DONE="MouseMIDI is on. In the Grid: scroll = value step, hold middle + scroll = note length, right-click = Erase. Edit /data/mpc-addins/mousemidi/mousemidi.conf to retune (no reinstall needed)."

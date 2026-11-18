@@ -57,18 +57,46 @@ static void wake_reader(void) { if (wake_fd[1] >= 0) { char c = 1; if (write(wak
 static void q3(unsigned char a, unsigned char b, unsigned char c) { pthread_mutex_lock(&lock); push(a); push(b); push(c); pthread_mutex_unlock(&lock); wake_reader(); }
 static void tap(int note) { q3(0x90, note, 0x7F); q3(0x90, note, 0x00); }
 
+static int parse_int(const char *s) {   /* 0x.. hex or plain decimal; no libc strtol (avoids a C23-only symbol) */
+    int sign = 1, v = 0;
+    while (*s == ' ' || *s == '\t') s++;
+    if (*s == '-') { sign = -1; s++; } else if (*s == '+') s++;
+    if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) {
+        for (s += 2; *s; s++) {
+            int d = (*s >= '0' && *s <= '9') ? *s - '0'
+                  : (*s >= 'a' && *s <= 'f') ? *s - 'a' + 10
+                  : (*s >= 'A' && *s <= 'F') ? *s - 'A' + 10 : -1;
+            if (d < 0) break;
+            v = v * 16 + d;
+        }
+    } else {
+        for (; *s >= '0' && *s <= '9'; s++) v = v * 10 + (*s - '0');
+    }
+    return v * sign;
+}
 static void load_conf(void) {
-    FILE *f = fopen("/data/mousemidi.conf", "r");
+    /* the packaged addin keeps its conf in its own folder; /data/mousemidi.conf is the lab-loader fallback */
+    FILE *f = fopen("/data/mpc-addins/mousemidi/mousemidi.conf", "r");
+    if (!f) f = fopen("/data/mousemidi.conf", "r");
     if (!f) return;
-    char k[64], v[64];
-    while (fscanf(f, "%63s %63s", k, v) == 2) {
+    char line[160];
+    while (fgets(line, sizeof line, f)) {
+        char k[64] = "", v[64] = "";
+        char *p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        int n = 0; while (p[n] && p[n] != ' ' && p[n] != '\t' && p[n] != '\n' && n < 63) { k[n] = p[n]; n++; }
+        k[n] = 0; p += n;
+        while (*p == ' ' || *p == '\t') p++;
+        n = 0; while (p[n] && p[n] != ' ' && p[n] != '\t' && p[n] != '\n' && n < 63) { v[n] = p[n]; n++; }
+        v[n] = 0;
+        if (!k[0] || !v[0] || k[0] == '#') continue;
         if (!strcmp(k, "mouse")) snprintf(mouse_dev, sizeof mouse_dev, "%s", v);
-        else if (!strcmp(k, "plus")) NOTE_PLUS = (int)strtol(v, 0, 0);
-        else if (!strcmp(k, "minus")) NOTE_MINUS = (int)strtol(v, 0, 0);
-        else if (!strcmp(k, "shift")) NOTE_SHIFT = (int)strtol(v, 0, 0);
-        else if (!strcmp(k, "erase")) NOTE_ERASE = (int)strtol(v, 0, 0);
-        else if (!strcmp(k, "invert")) invert = atoi(v);
-        else if (!strcmp(k, "cc")) use_cc = atoi(v);
+        else if (!strcmp(k, "plus")) NOTE_PLUS = parse_int(v);
+        else if (!strcmp(k, "minus")) NOTE_MINUS = parse_int(v);
+        else if (!strcmp(k, "shift")) NOTE_SHIFT = parse_int(v);
+        else if (!strcmp(k, "erase")) NOTE_ERASE = parse_int(v);
+        else if (!strcmp(k, "invert")) invert = parse_int(v);
+        else if (!strcmp(k, "cc")) use_cc = parse_int(v);
         else if (!strcmp(k, "shift_btn")) shift_btn = !strcmp(v, "right") ? BTN_RIGHT : BTN_MIDDLE;
         else if (!strcmp(k, "erase_btn")) erase_btn = !strcmp(v, "middle") ? BTN_MIDDLE : BTN_RIGHT;
     }
