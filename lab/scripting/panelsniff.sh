@@ -16,11 +16,12 @@ on)
   printf '[Service]\nEnvironment="LD_PRELOAD=%s%s%s"\n' "$CUR" "${CUR:+:}" "$SO" > "$DROP/99-panelsniff.conf"
   rm -f /tmp/mpc-panel.txt
   systemctl daemon-reload && systemctl restart "$UNIT"
-  echo "MPC restarting. When it is up: turn the DATA WHEEL slowly ~5 clicks each way, press a few buttons and a Q-Link, then: sh $0 show" ;;
+  echo "MPC restarting. When it is up, FIRST tap the touchscreen a few times (a known input, to prove the sniffer works),"
+  echo "then turn the DATA WHEEL ~5 clicks each way, press a few buttons and a Q-Link. Then: sh $0 show" ;;
 show)
-  if [ ! -s /tmp/mpc-panel.txt ]; then echo "(nothing captured: the wheel/buttons are not read from these devices)"; exit 0; fi
-  echo "== distinct messages (count  fd+bytes)"; sort /tmp/mpc-panel.txt | uniq -c | sort -rn | head -n 40
-  echo "== which fds"; cut -d: -f1 /tmp/mpc-panel.txt | sort | uniq -c ;;
+  if [ ! -s /tmp/mpc-panel.txt ]; then echo "(log empty: the sniffer did not load — tell me)"; exit 0; fi
+  echo "== sniffer / opened devices"; grep -E "^(==|open )" /tmp/mpc-panel.txt | sort -u
+  echo "== byte messages (count  fd+bytes), most common first"; grep "^fd" /tmp/mpc-panel.txt | sort | uniq -c | sort -rn | head -n 40 ;;
 off)
   rm -f "$DROP/99-panelsniff.conf"; systemctl daemon-reload && systemctl restart "$UNIT"; echo "MPC restarted without the sniffer" ;;
 esac
