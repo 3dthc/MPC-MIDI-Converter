@@ -28,10 +28,10 @@
              filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.5)); }
 .button-tx { font-size: 21px !important; font-weight: 700; letter-spacing: 0.02em; fill: #eceef2; }
 .button[style*="e8a23a"] .button-bg { stroke: rgba(255, 230, 180, 0.35); }
-.button[style*="e8a23a"] .button-tx { fill: #1b1206; }
+.button[style*="e8a23a"] .button-tx { fill: #0f0b2a; }
 
 /* option segments: rounded pills split by the background colour */
-.seg-bg { rx: 10px; stroke: #15161b; stroke-width: 4px; }
+.seg-bg { rx: 10px; stroke: #13112a; stroke-width: 4px; }
 .seg-tx { font-weight: 700; letter-spacing: 0.08em; }
 
 /* knob: dark cap, amber arc */
@@ -41,3 +41,5 @@
 /* image buttons: label colours (the amber ones carry dark text) */
 .button text { font-size: 21px; font-weight: 700; letter-spacing: 0.02em; }
 .seg-bg { rx: 12px; }
+
+.button text { fill: #f1effc; }

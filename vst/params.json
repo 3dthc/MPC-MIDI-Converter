@@ -202,10 +202,10 @@
   },
   {
    "key": "rows",
-   "name": "List Size",
+   "name": "List",
    "options": [
-    "Big",
-    "More"
+    "Large",
+    "Compact"
    ],
    "automatable": false
   },

@@ -511,7 +511,7 @@ static int get_param(void *inst, const char *key, char *b, int n) {
         if (!key[6]) {   /* the row's text: folders end in " /" */
             if (i < s->nent) {
                 const char *nm = strcmp(s->dir, MMC_ROOT) ? s->ent[i].name : drive_label(s->ent[i].name);
-                r = snprintf(b, n, "%s%s", nm, s->ent[i].dir ? "  /" : "");
+                r = snprintf(b, n, "%s%s", nm, s->ent[i].dir ? "  \xe2\x80\xba" : "");
             }
             else r = snprintf(b, n, " ");
         } else if (!strcmp(key + 6, "_on")) r = snprintf(b, n, "%d", i < s->nent && i == s->sel);

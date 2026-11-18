@@ -24,7 +24,7 @@ This is the **MPC plugin**. Windows (`.exe`) and Mac (`.dmg`) versions are plann
 | **Split tracks** | **Off** puts the whole file in one pattern. **On** makes one pattern per MIDI track (per channel, for single-track files), named after the track. |
 | **Drum map** | **On** moves General MIDI drum notes onto MPC pads (layout below), for drum loops made in other software. |
 | **Quantize** | Snaps note starts to 1/8, 1/16 or 1/32. |
-| **List size** | **Big** shows 5 large rows; **More** shows 8. |
+| **List** | **Large** shows 5 big rows; **Compact** shows 8. |
 
 Patterns do not store tempo, so the file's tempo is added to the pattern's name, for example `Groove 01 (92 BPM).mpcpattern`.
 A folder conversion keeps the pack's own folder structure inside MIDI Converts.
