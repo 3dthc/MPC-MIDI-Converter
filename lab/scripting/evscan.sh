@@ -7,7 +7,7 @@ set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 if [ $# -ge 1 ]; then
   echo "Operate the DATA WHEEL (and a button) now, for 5 seconds:"
-  timeout 5 "$HERE/evread" "$1"; exit 0
+  "$HERE/evread" "$1" 6; exit 0
 fi
 echo "== input devices"
 cat /proc/bus/input/devices | awk '/^N:/{n=$0} /^H:/{print n"  "$0}'
