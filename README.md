@@ -9,7 +9,7 @@ This is the **MPC plugin**. Windows (`.exe`) and Mac (`.dmg`) versions are plann
 ## Using it
 
 1. Add **MPC MIDI Converter** to a track (it is listed with the instruments).
-2. Tap a drive, then tap folders to open them. **BACK** goes up a folder; the arrows change page.
+2. Tap a drive, then tap folders to open them. **BACK** goes up a folder; drag the scroll bar beside the list to scroll.
 3. Tap a MIDI file to pick it (it lights up), then tap it again or tap **CONVERT FILE**. **CONVERT FOLDER** converts
    every MIDI file in the folder you are in, and in its subfolders.
 4. Find the patterns in the **MIDI Converts** folder at the root of the drive the plugin is installed on (outside the
