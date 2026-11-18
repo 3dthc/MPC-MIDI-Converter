@@ -77,6 +77,27 @@ static const char *drive_label(const char *name) {
     return !strcmp(name, "az01-internal-sd") ? "Internal" : name;
 }
 
+/* The internal drive can be mounted twice (az01-internal-sd and a named mount of the same storage): keep one,
+ * the named one. Same storage = same device and inode of the mount's root. */
+static int drop_aliases(const char *dir, ent_t *e, int n) {
+    struct stat st[64];
+    int ok[64] = {0}, m = n < 64 ? n : 64;
+    for (int i = 0; i < m; i++) {
+        char p[1300];
+        snprintf(p, sizeof p, "%s/%s", dir, e[i].name);
+        ok[i] = !stat(p, &st[i]);
+    }
+    int w = 0;
+    for (int i = 0; i < n; i++) {
+        int dup = 0;
+        if (i < m && ok[i] && !strcmp(e[i].name, "az01-internal-sd"))
+            for (int j = 0; j < m; j++)
+                if (j != i && ok[j] && st[j].st_dev == st[i].st_dev && st[j].st_ino == st[i].st_ino) dup = 1;
+        if (!dup) e[w++] = e[i];
+    }
+    return w;
+}
+
 /* Lists `dir` into a fresh array (no lock held), then swaps it in. */
 static int list_dir(st_t *s, const char *dir, const char *select) {
     DIR *dp = opendir(dir);
@@ -95,6 +116,7 @@ static int list_dir(st_t *s, const char *dir, const char *select) {
         n++;
     }
     closedir(dp);
+    if (top) n = drop_aliases(dir, e, n);
     qsort(e, n, sizeof *e, ent_cmp);
     pthread_mutex_lock(&s->mu);
     free(s->ent);
