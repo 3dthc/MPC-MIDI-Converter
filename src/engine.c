@@ -14,7 +14,6 @@
 #include <time.h>
 #include "engine.h"
 #include "convert.h"
-#include "plugin_dir.h"
 
 #ifndef MMC_ROOT
 #define MMC_ROOT "/media"        /* MPC drives are mounted here; the top of the browser */
@@ -45,12 +44,11 @@ typedef struct {
     char dir[1024];               /* folder shown */
     ent_t *ent; int nent;         /* its entries: folders first, then MIDI files */
     int top, sel;                 /* top: entry shown in the first row; sel: the highlighted entry, -1 none */
-    char status[128];
+    char status[200];
     unsigned rev;
 
     int split, drums, quant, transpose, trim, save_next, bpm_name, help, more;
     long long last_tap_ms, nav_ms, pick_ms;
-    char out_root[1024];          /* where "MIDI Converts" goes: the root of the drive the plugin is installed on */
 } st_t;
 
 static void bump(st_t *s) { s->rev++; }
@@ -169,6 +167,14 @@ static void drive_root(const char *path, char *out, int n) {
     snprintf(out, n, "%.*s", len, path);
 }
 
+/* "in <drive> > MIDI Converts", with the drive named as the list shows it */
+static void drive_where(const char *src_dir, char *out, int n) {
+    char root[1024];
+    drive_root(src_dir, root, sizeof root);
+    const char *d = strrchr(root, '/');
+    snprintf(out, n, "in %.60s \xe2\x80\xba " OUT_DIR, drive_label(d ? d + 1 : root));
+}
+
 static void opts_of(st_t *s, conv_opts_t *o, int *save_next) {
     pthread_mutex_lock(&s->mu);
     o->split = s->split; o->drum_map = s->drums; o->quantize = QUANT[s->quant];
@@ -182,13 +188,13 @@ static void base_name(const char *path, char *out, int n) {
     snprintf(out, n, "%s", sl ? sl + 1 : path);
 }
 
-/* Output folder for a MIDI file in `src_dir`: next to it, or <plugin's drive>/MIDI Converts[/<rel>]. */
+/* Output folder for a MIDI file in `src_dir`: next to it, or <its drive>/MIDI Converts[/<rel>]. */
 static int out_dir_for(const st_t *s, const char *src_dir, const char *rel, int save_next, char *out, int n) {
     if (save_next) snprintf(out, n, "%s", src_dir);
     else {
         char root[1024];
-        if (s->out_root[0]) snprintf(root, sizeof root, "%s", s->out_root);
-        else drive_root(src_dir, root, sizeof root);   /* the plugin's own place is unknown: the MIDI file's drive */
+        (void)s;
+        drive_root(src_dir, root, sizeof root);   /* the top level of the drive the MIDI file is on */
         if (rel && rel[0]) snprintf(out, n, "%s/" OUT_DIR "/%s", root, rel);
         else snprintf(out, n, "%s/" OUT_DIR, root);
     }
@@ -208,10 +214,11 @@ static void do_convert(st_t *s, const char *dir, const char *name) {
         set_status(s, m);
         return;
     }
-    char where[64];
-    snprintf(where, sizeof where, "%s", save_next ? "next to the file" : "in " OUT_DIR);
+    char where[100];
+    if (save_next) snprintf(where, sizeof where, "next to the file");
+    else drive_where(dir, where, sizeof where);
     pthread_mutex_lock(&s->mu);
-    snprintf(s->status, sizeof s->status, "Done: %d pattern%s %s", r, r == 1 ? "" : "s", where);
+    snprintf(s->status, sizeof s->status, "%d pattern%s %s", r, r == 1 ? "" : "s", where);
     bump(s);
     pthread_mutex_unlock(&s->mu);
 }
@@ -269,9 +276,13 @@ static void do_batch(st_t *s, const char *dir) {
     batch_walk(s, dir, save_next ? "" : top, 0, &o, save_next, &t);
     pthread_mutex_lock(&s->mu);
     if (!t.files) snprintf(s->status, sizeof s->status, "No MIDI files in this folder");
-    else snprintf(s->status, sizeof s->status, "Done: %d file%s, %d pattern%s%s%d failed", t.files, t.files == 1 ? "" : "s",
-                  t.patterns, t.patterns == 1 ? "" : "s", ", ", t.failed);
-    if (t.files && !t.failed) { char *c = strstr(s->status, ", 0 failed"); if (c) *c = 0; }
+    else {
+        char where[100];
+        if (save_next) snprintf(where, sizeof where, "next to the files");
+        else drive_where(dir, where, sizeof where);
+        if (t.failed) snprintf(s->status, sizeof s->status, "%d patterns %s, %d failed", t.patterns, where, t.failed);
+        else snprintf(s->status, sizeof s->status, "%d pattern%s %s", t.patterns, t.patterns == 1 ? "" : "s", where);
+    }
     bump(s);
     pthread_mutex_unlock(&s->mu);
 }
@@ -337,22 +348,6 @@ static void post(st_t *s, int cmd, const char *arg) {
     pthread_cond_signal(&s->cv);
 }
 
-/* The root of the drive the plugin is installed on (/media/<drive>, or /sdcard), so converted patterns sit on the
- * same drive as the plugin but outside its folder: updating or removing the plugin never touches them. */
-static void plugin_drive(char *out, int n) {
-    out[0] = 0;
-#ifdef MMC_OUT_ROOT
-    snprintf(out, n, "%s", MMC_OUT_ROOT);
-#else
-    char dir[1024];
-    if (!mpc_plugin_dir(dir, sizeof dir)) return;
-    if (!strncmp(dir, "/media/", 7)) {
-        const char *sl = strchr(dir + 7, '/');
-        snprintf(out, n, "%.*s", sl ? (int)(sl - dir) : (int)strlen(dir), dir);
-    } else if (!strncmp(dir, "/sdcard", 7)) snprintf(out, n, "/sdcard");
-#endif
-}
-
 static void *create(const char *data_dir) {
     (void)data_dir;
     st_t *s = calloc(1, sizeof *s);
@@ -362,7 +357,6 @@ static void *create(const char *data_dir) {
     snprintf(s->dir, sizeof s->dir, "%s", MMC_ROOT);
     s->sel = -1;
     s->bpm_name = 1;
-    plugin_drive(s->out_root, sizeof s->out_root);
     snprintf(s->status, sizeof s->status, "Loading...");
     s->cmd = CMD_LIST;
     if (pthread_create(&s->th, NULL, worker, s)) {

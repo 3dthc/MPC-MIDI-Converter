@@ -65,11 +65,11 @@ int main(void) {
     E->set_param(I, "tracks", "1");
     tap("convert"); settle();
     printf("     status: %s\n", get("status"));
-    check(strstr(get("status"), "Done: 3 patterns") != NULL, "split file gives 3 patterns");
+    check(strstr(get("status"), "3 patterns in TESTDRIVE") != NULL, "split file gives 3 patterns");
     E->set_param(I, "tracks", "0");
     tap("convert_all"); settle();
     printf("     status: %s\n", get("status"));
-    check(strstr(get("status"), "Done:") != NULL, "batch finishes");
+    check(strstr(get("status"), "MIDI Converts") != NULL, "batch finishes");
     get("state"); char st[256]; strcpy(st, buf);
     tap("up"); settle();
     check(!strcmp(get("folder"), "TESTDRIVE"), "up goes to the parent");
