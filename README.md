@@ -71,9 +71,14 @@ A folder conversion keeps the pack's own folder structure inside MIDI Converts.
 Needs Docker and [Open MPC](https://github.com/open-mpc/mpc-vst-plugins) checked out next to this folder.
 
 ```sh
-./build.sh          # tests, then builds vst/build/<.so> and the skin
-test/run_tests.sh   # just the tests (converter, 300 damaged files, the plugin's browser), no Docker
+./build.sh                      # tests, then builds vst/build/<.so> and the skin
+test/run_tests.sh               # just the tests (converter, damaged and crafted files, the plugin's browser), no Docker
+./release.sh 1.0.1              # checks the toolchain is current, builds, packages and catalog-checks the zip
+./release.sh 1.0.1 --publish    # the same, then creates or updates GitHub release v1.0.1 (notes: release-notes/1.0.1.md)
 ```
+
+`release.sh` stops if `mpc-vst-plugins` is behind Open MPC, if `vst/vst.json` has another version, or if the catalog
+check finds anything to fix, so every release zip works on current MPC OS versions.
 
 ## Licence
 
