@@ -10,7 +10,8 @@ PID=$(pidof MPC)
 MPCHOME=$(tr '\0' '\n' < /proc/$PID/environ 2>/dev/null | sed -n 's/^HOME=//p')
 [ -n "$MPCHOME" ] || MPCHOME=/root
 CANDIDATES="$MPCHOME/.config/Akai/SME0/Devices/3dthc $MPCHOME/.local/share/Akai/SME0/Devices/3dthc /data/Settings/Devices/3dthc"
-for d in /media/*; do case "$d" in */acvs-*|*/az01-internal) ;; *) CANDIDATES="$CANDIDATES $d/Devices/3dthc";; esac; done
+# one folder per line, so drive names with spaces ("MPC ONE") stay whole
+CANDIDATES=$(printf '%s\n' $CANDIDATES; for d in /media/*; do case "$d" in */acvs-*|*/az01-internal) ;; *) printf '%s\n' "$d/Devices/3dthc";; esac; done)
 
 case "${1:-info}" in
 info)
@@ -25,7 +26,7 @@ install)
   PORTS=$(amidi -l 2>/dev/null | awk 'NR>1{ $1=""; $2=""; sub(/^ +/,""); print }' | grep -v -i 'MPC' | head -n 1)
   [ -n "$PORTS" ] || { echo "Plug in a USB MIDI keyboard or synth first (the test script attaches to it)."; exit 1; }
   echo "Attaching the test script to: $PORTS"
-  for d in $CANDIDATES; do
+  printf '%s\n' "$CANDIDATES" | while IFS= read -r d; do
     mkdir -p "$d" 2>/dev/null || continue
     cp "$HERE/mmcLab.lua" "$d/mmcLab.lua"
     printf '[info]\ndevice=%s\nmanufacturer=3dthc\ninput=%s\noutput=%s\nscript=mmcLab.lua\nscriptVersion=1.0\n' \
@@ -36,7 +37,7 @@ install)
   echo "If nothing appears, save your project, restart MPC, replug the device again, then run: sh lab.sh info"
   ;;
 remove)
-  for d in $CANDIDATES; do rm -f "$d/mmcLab.lua" "$d/mmcLab.ini" 2>/dev/null; rmdir "$d" "$(dirname "$d")" 2>/dev/null; done
+  printf '%s\n' "$CANDIDATES" | while IFS= read -r d; do rm -f "$d/mmcLab.lua" "$d/mmcLab.ini" 2>/dev/null; rmdir "$d" "$(dirname "$d")" 2>/dev/null; done
   echo removed
   ;;
 esac
