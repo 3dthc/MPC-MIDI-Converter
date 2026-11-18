@@ -178,7 +178,7 @@ static int out_dir_for(const char *src_dir, const char *rel, int save_next, char
 static void do_convert(st_t *s, const char *dir, const char *name) {
     conv_opts_t o; int save_next;
     opts_of(s, &o, &save_next);
-    char in[1300], out[1300], err[96] = "";
+    char in[2100], out[2100], err[96] = "";
     snprintf(in, sizeof in, "%s/%s", dir, name);
     if (out_dir_for(dir, NULL, save_next, out, sizeof out)) { set_status(s, "Can't make the output folder"); return; }
     int r = mmc_convert_file(in, out, &o, err, sizeof err);
@@ -242,7 +242,7 @@ static void batch_walk(st_t *s, const char *dir, const char *rel, int depth, con
 static void do_batch(st_t *s, const char *dir) {
     conv_opts_t o; int save_next;
     opts_of(s, &o, &save_next);
-    char top[256];
+    char top[1024];
     base_name(dir, top, sizeof top);
     tally_t t = {0};
     /* MIDI Import/<folder name>/<subfolders>, so a batch keeps the pack's own structure */
@@ -282,7 +282,7 @@ static void *worker(void *arg) {
                 if (strlen(d) < strlen(MMC_ROOT)) snprintf(d, sizeof d, "%s", MMC_ROOT);
             }
         } else if (cmd == CMD_ENTER) {
-            char d[1300];
+            char d[2100];
             snprintf(d, sizeof d, "%s/%s", dir, a);
             if (list_dir(s, d, NULL)) set_status(s, "Can't open that folder");
         } else if (cmd == CMD_UP) {

@@ -24,6 +24,7 @@
       "-Isrc"
     ],
     "libs": [
+      "-lm",
       "-lpthread"
     ]
   }
