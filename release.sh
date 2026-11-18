@@ -39,14 +39,14 @@ echo "== tests and build"
 # 4. Package
 echo "== packaging"
 rm -rf dist
-"$MV/tools/release.py" --so vst/build/mpc_midi_converter.so --skin "vst/build/skin/3dthc - VST - MPC MIDI Converter" \
+python3 "$MV/tools/release.py" --so vst/build/mpc_midi_converter.so --skin "vst/build/skin/3dthc - VST - MPC MIDI Converter" \
   --entry vst/build/pluginlist-entry.xml --version "$VER" --about "Converts MIDI files to MPC patterns on the MPC." \
   --repo 3dthc/MPC-MIDI-Converter --license MIT --id mpc-midi-converter -o dist
 ZIP=$(ls dist/*.zip)
 
 # 5. Catalog check: any warning stops the release
 echo "== catalog check"
-out=$("$MV/tools/catalog_check.py" "$ZIP" --catalog --expect-id mpc-midi-converter --expect-repo 3dthc/MPC-MIDI-Converter 2>&1) || { echo "$out"; exit 1; }
+out=$(python3 "$MV/tools/catalog_check.py" "$ZIP" --catalog --expect-id mpc-midi-converter --expect-repo 3dthc/MPC-MIDI-Converter 2>&1) || { echo "$out"; exit 1; }
 echo "$out"
 if echo "$out" | grep -q '^warning:'; then echo "The zip has warnings: fix them before releasing."; exit 1; fi
 unzip -l "$ZIP" | grep -q 'plugin.json' || { echo "The zip has no plugin.json."; exit 1; }
