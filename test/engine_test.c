@@ -79,6 +79,10 @@ int main(void) {
     E->set_param(I, "state", st); settle();
     check(!strcmp(get("folder"), "TESTDRIVE/Pack"), "state restores the folder");
     E->destroy(I2); I = keep;
+    { void *I3 = E->create(NULL); void *k3 = I; I = I3; settle();
+      E->set_param(I, "state", "opts=0,0,0,0,0,0,1,0\ndir=" MMC_ROOT "/../../etc\n"); settle();
+      check(!strcmp(get("folder"), "Drives"), "a project's folder outside the drives is refused");
+      E->destroy(I3); I = k3; }
     for (int i = 0; i < 2000; i++) { E->set_param(I, "next", "1"); E->set_param(I, "prev", "1"); E->set_param(I, "up", "1"); E->set_param(I, "file_1", "1"); }   /* tap storm while the worker runs */
     E->destroy(I);
     printf(fails ? "FAILED\n" : "PASSED\n");

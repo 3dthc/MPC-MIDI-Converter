@@ -11,6 +11,7 @@
 #include <string.h>
 #include <strings.h>
 #include <sys/stat.h>
+#include <limits.h>
 #include <time.h>
 #include "engine.h"
 #include "convert.h"
@@ -40,6 +41,7 @@ typedef struct {
     pthread_cond_t cv;
     int cmd; char cmd_arg[1024];
     int busy;
+    volatile int quit;            /* set by destroy(): a running batch stops after the file it is on */
 
     char dir[1024];               /* folder shown */
     ent_t *ent; int nent;         /* its entries: folders first, then MIDI files */
@@ -51,6 +53,7 @@ typedef struct {
     long long last_tap_ms, nav_ms, pick_ms;
 } st_t;
 
+static int inside_root(char *d);
 static void bump(st_t *s) { s->rev++; }
 
 static long long now_ms(void) {
@@ -143,16 +146,16 @@ static int list_dir(st_t *s, const char *dir, const char *select) {
     if (select)
         for (int i = 0; i < n; i++)
             if (!strcmp(e[i].name, select)) { s->top = i; clamp_top(s); s->sel = i; break; }
-    snprintf(s->status, sizeof s->status, n ? "Pick a MIDI file, or convert the whole folder" :
-             top ? "No drives found" : "No MIDI files or folders here");
+    snprintf(s->status, sizeof s->status, n >= MAX_ENT ? "Showing the first 4000 items" :
+             n ? "Pick a MIDI file, or convert the whole folder" : top ? "No drives found" : "No MIDI files or folders here");
     bump(s);
     pthread_mutex_unlock(&s->mu);
     return 0;
 }
 
 static int mkdirs(const char *path) {
-    char p[1024];
-    snprintf(p, sizeof p, "%s", path);
+    char p[2100];
+    if (snprintf(p, sizeof p, "%s", path) >= (int)sizeof p) return -1;
     for (char *c = p + 1; *c; c++)
         if (*c == '/') { *c = 0; if (mkdir(p, 0755) && errno != EEXIST) return -1; *c = '/'; }
     return mkdir(p, 0755) && errno != EEXIST ? -1 : 0;
@@ -190,14 +193,16 @@ static void base_name(const char *path, char *out, int n) {
 
 /* Output folder for a MIDI file in `src_dir`: next to it, or <its drive>/MIDI Converts[/<rel>]. */
 static int out_dir_for(const st_t *s, const char *src_dir, const char *rel, int save_next, char *out, int n) {
-    if (save_next) snprintf(out, n, "%s", src_dir);
+    int w;
+    (void)s;
+    if (save_next) w = snprintf(out, n, "%s", src_dir);
     else {
         char root[1024];
-        (void)s;
         drive_root(src_dir, root, sizeof root);   /* the top level of the drive the MIDI file is on */
-        if (rel && rel[0]) snprintf(out, n, "%s/" OUT_DIR "/%s", root, rel);
-        else snprintf(out, n, "%s/" OUT_DIR, root);
+        if (rel && rel[0]) w = snprintf(out, n, "%s/" OUT_DIR "/%s", root, rel);
+        else w = snprintf(out, n, "%s/" OUT_DIR, root);
     }
+    if (w >= n) return -1;   /* a path too long to hold: refuse rather than write somewhere shorter */
     return mkdirs(out);
 }
 
@@ -205,7 +210,7 @@ static void do_convert(st_t *s, const char *dir, const char *name) {
     conv_opts_t o; int save_next;
     opts_of(s, &o, &save_next);
     char in[2100], out[2100], err[96] = "";
-    snprintf(in, sizeof in, "%s/%s", dir, name);
+    if (snprintf(in, sizeof in, "%s/%s", dir, name) >= (int)sizeof in) { set_status(s, "Failed: path too long"); return; }
     if (out_dir_for(s, dir, NULL, save_next, out, sizeof out)) { set_status(s, "Can't make the output folder"); return; }
     int r = mmc_convert_file(in, out, &o, err, sizeof err);
     if (r < 0) {
@@ -244,16 +249,16 @@ static void batch_walk(st_t *s, const char *dir, const char *rel, int depth, con
     closedir(dp);
     if (!e) return;
     qsort(e, n, sizeof *e, ent_cmp);
-    for (int i = 0; i < n; i++) {
-        char path[1300], r2[1300];
-        snprintf(path, sizeof path, "%s/%s", dir, e[i].name);
+    for (int i = 0; i < n && !s->quit; i++) {
+        char path[2100], r2[1300];
+        if (snprintf(path, sizeof path, "%s/%s", dir, e[i].name) >= (int)sizeof path) { if (!e[i].dir) t->failed++; continue; }
         if (e[i].dir) {
-            if (rel[0]) snprintf(r2, sizeof r2, "%s/%s", rel, e[i].name);
-            else snprintf(r2, sizeof r2, "%s", e[i].name);
+            if ((rel[0] ? snprintf(r2, sizeof r2, "%s/%s", rel, e[i].name)
+                        : snprintf(r2, sizeof r2, "%s", e[i].name)) >= (int)sizeof r2) continue;
             batch_walk(s, path, r2, depth + 1, o, save_next, t);
             continue;
         }
-        char out[1300], err[96];
+        char out[2100], err[96];
         t->files++;
         char m[128];
         snprintf(m, sizeof m, "Converting %d: %.100s", t->files, e[i].name);
@@ -305,7 +310,7 @@ static void *worker(void *arg) {
             /* a saved folder that is gone (card removed) falls back to the nearest folder that still exists */
             char d[1024];
             snprintf(d, sizeof d, "%s", a[0] ? a : dir);
-            if (strncmp(d, MMC_ROOT, strlen(MMC_ROOT))) snprintf(d, sizeof d, "%s", MMC_ROOT);
+            if (!inside_root(d)) snprintf(d, sizeof d, "%s", MMC_ROOT);
             while (list_dir(s, d, NULL) && strcmp(d, MMC_ROOT)) {
                 char *sl = strrchr(d, '/');
                 if (!sl || sl == d) { snprintf(d, sizeof d, "%s", MMC_ROOT); continue; }
@@ -340,6 +345,21 @@ static void *worker(void *arg) {
     return NULL;
 }
 
+/* A folder the browser may show: the drive list or a real folder under it. A project's saved folder comes from a
+ * file anyone could edit, so "..", symlinks and other paths are resolved first and anything outside is refused. */
+static int inside_root(char *d) {
+    size_t r = strlen(MMC_ROOT);
+    char real[PATH_MAX];
+    if (strstr(d, "/../") || (strlen(d) >= 3 && !strcmp(d + strlen(d) - 3, "/.."))) return 0;
+    if (realpath(d, real) && strlen(real) < 1024) {
+        if (strncmp(real, MMC_ROOT, r) || (real[r] && real[r] != '/')) return 0;
+        strcpy(d, real);
+        return 1;
+    }
+    /* gone (a card was removed): only the text can be checked; the caller walks up to what still exists */
+    return !strncmp(d, MMC_ROOT, r) && (!d[r] || d[r] == '/');
+}
+
 /* Called with s->mu held. A command while the worker is busy is dropped (taps don't queue up behind a batch). */
 static void post(st_t *s, int cmd, const char *arg) {
     if (s->busy || s->cmd != CMD_NONE) return;
@@ -369,6 +389,7 @@ static void destroy(void *inst) {
     st_t *s = inst;
     pthread_mutex_lock(&s->mu);
     s->cmd = CMD_QUIT;   /* the worker finishes the file it is on, then stops */
+    s->quit = 1;
     pthread_cond_signal(&s->cv);
     pthread_mutex_unlock(&s->mu);
     pthread_join(s->th, NULL);

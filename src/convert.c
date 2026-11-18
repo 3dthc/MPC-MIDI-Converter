@@ -8,6 +8,11 @@
  *   time and len in ticks at 960 per beat. On a drum track the note is the pad, 36 = A01. No tempo is stored. */
 #include "convert.h"
 #include <ctype.h>
+#include <fcntl.h>
+#include <inttypes.h>
+#include <stdint.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,9 +20,10 @@
 #define MPC_PPQ 960
 #define MAX_FILE (16 * 1024 * 1024)
 #define MAX_PARTS 64
+#define MAX_EVENTS 400000   /* notes + pressure: far beyond any real MIDI file, and caps the work memory at ~20 MB */
 
-typedef struct { long start, len; unsigned char note, vel, ch; short part; } note_t;
-typedef struct { long time; unsigned char note, val, ch; short part; } press_t;
+typedef struct { int64_t start, len; unsigned char note, vel, ch; short part; } note_t;
+typedef struct { int64_t time; unsigned char note, val, ch; short part; } press_t;
 
 typedef struct {
     note_t *n; int nn, cap_n;
@@ -29,6 +35,7 @@ typedef struct {
 } song_t;
 
 static int push_note(song_t *s, note_t v) {
+    if (s->nn + s->np >= MAX_EVENTS) return -1;
     if (s->nn == s->cap_n) {
         int c = s->cap_n ? s->cap_n * 2 : 1024;
         note_t *t = realloc(s->n, sizeof *t * c);
@@ -40,6 +47,7 @@ static int push_note(song_t *s, note_t v) {
 }
 
 static int push_press(song_t *s, press_t v) {
+    if (s->nn + s->np >= MAX_EVENTS) return -1;
     if (s->np == s->cap_p) {
         int c = s->cap_p ? s->cap_p * 2 : 1024;
         press_t *t = realloc(s->p, sizeof *t * c);
@@ -65,20 +73,21 @@ static int vlq(const unsigned char *b, long len, long *i, long *out) {
 
 /* Open notes per channel and key: a small stack so overlapping same-key notes pair first-in first-out. */
 #define OPEN_DEPTH 8
-typedef struct { long t[OPEN_DEPTH]; unsigned char v[OPEN_DEPTH]; int n; } open_t;
+typedef struct { int64_t t[OPEN_DEPTH]; unsigned char v[OPEN_DEPTH]; int n; } open_t;
 
-static int close_note(song_t *s, open_t *o, int ch, int key, long tick, int part) {
+static int close_note(song_t *s, open_t *o, int ch, int key, int64_t tick, int part) {
     if (!o->n) return 0;
     note_t nt = {o->t[0], tick - o->t[0], (unsigned char)key, o->v[0], (unsigned char)ch, (short)part};
     if (nt.len < 1) nt.len = 1;
-    memmove(o->t, o->t + 1, sizeof(long) * (o->n - 1));
+    memmove(o->t, o->t + 1, sizeof(int64_t) * (o->n - 1));
     memmove(o->v, o->v + 1, o->n - 1);
     o->n--;
     return push_note(s, nt);
 }
 
 static int parse_track(song_t *s, const unsigned char *b, long len, int trk, open_t (*open)[128]) {
-    long i = 0, tick = 0;
+    long i = 0;
+    int64_t tick = 0;
     int status = 0;
     memset(open, 0, sizeof(open_t) * 16 * 128);
     while (i < len) {
@@ -140,7 +149,8 @@ static int parse_track(song_t *s, const unsigned char *b, long len, int trk, ope
 
 static int parse(song_t *s, const unsigned char *d, long len, char *err, int en) {
     if (len < 14 || memcmp(d, "MThd", 4)) { snprintf(err, en, "not a MIDI file"); return -1; }
-    long hl = be(d + 4, 4);
+    unsigned hl = be(d + 4, 4);
+    if (hl < 6 || hl > (unsigned)(len - 8)) { snprintf(err, en, "bad MIDI header"); return -1; }
     s->fmt = (int)be(d + 8, 2);
     int ntrk = (int)be(d + 10, 2);
     unsigned div = be(d + 12, 2);
@@ -149,11 +159,11 @@ static int parse(song_t *s, const unsigned char *d, long len, char *err, int en)
     s->ppq = (int)div;
     open_t (*open)[128] = malloc(sizeof(open_t) * 16 * 128);
     if (!open) { snprintf(err, en, "out of memory"); return -1; }
-    long pos = 8 + hl;
+    long pos = 8 + (long)hl;
     int t = 0, rc = 0;
     while (t < ntrk && pos + 8 <= len) {
-        long cl = be(d + pos + 4, 4);
-        if (cl > len - pos - 8) cl = len - pos - 8;   /* a truncated last chunk: read what is there */
+        unsigned ucl = be(d + pos + 4, 4);
+        long cl = ucl > (unsigned)(len - pos - 8) ? len - pos - 8 : (long)ucl;   /* a truncated last chunk: read what is there */
         if (!memcmp(d + pos, "MTrk", 4)) {
             rc = parse_track(s, d + pos + 8, cl, t, open);
             if (rc == -2) break;
@@ -163,7 +173,7 @@ static int parse(song_t *s, const unsigned char *d, long len, char *err, int en)
         pos += 8 + cl;
     }
     free(open);
-    if (rc == -2) { snprintf(err, en, "out of memory"); return -1; }
+    if (rc == -2) { snprintf(err, en, s->nn + s->np >= MAX_EVENTS ? "too many notes" : "out of memory"); return -1; }
     s->nparts = t < MAX_PARTS ? t : MAX_PARTS;
     if (!s->nn) { snprintf(err, en, "no notes in file"); return -1; }
     return 0;
@@ -191,7 +201,7 @@ static int gm_pad(int n) {
     }
 }
 
-typedef struct { long time, len; int type, note; double val; } ev_t;
+typedef struct { int64_t time, len; int type, note; double val; } ev_t;
 
 static int ev_cmp(const void *a, const void *b) {
     const ev_t *x = a, *y = b;
@@ -217,15 +227,15 @@ static int write_part(const song_t *s, int part, int use_ch, const char *path, c
     int cap = s->nn + s->np, ne = 0, notes = 0;
     ev_t *ev = malloc(sizeof *ev * (cap ? cap : 1));
     if (!ev) return -1;
-    long first = -1;
+    int64_t first = -1;
     for (int i = 0; i < s->nn; i++) {
         const note_t *n = &s->n[i];
         if (part >= 0 && (use_ch ? n->ch : n->part) != part) continue;
-        long t = (long)(n->start * k + 0.5);
+        int64_t t = (int64_t)(n->start * k + 0.5);
         if (o->quantize > 0) t = (t + o->quantize / 2) / o->quantize * o->quantize;
         int nt = o->drum_map ? 36 + gm_pad(n->note) : n->note + o->transpose;
         if (nt < 0 || nt > 127) continue;
-        long l = (long)(n->len * k + 0.5);
+        int64_t l = (int64_t)(n->len * k + 0.5);
         ev[ne++] = (ev_t){t, l < 1 ? 1 : l, 2, nt, n->vel / 127.0};
         if (first < 0 || t < first) first = t;
         notes++;
@@ -237,22 +247,24 @@ static int write_part(const song_t *s, int part, int use_ch, const char *path, c
             if (part >= 0 && (use_ch ? p->ch : p->part) != part) continue;
             int nt = p->note + o->transpose;
             if (nt < 0 || nt > 127) continue;
-            ev[ne++] = (ev_t){(long)(p->time * k + 0.5), 0, 1, nt, p->val / 127.0};
+            ev[ne++] = (ev_t){(int64_t)(p->time * k + 0.5), 0, 1, nt, p->val / 127.0};
         }
-    long off = o->trim && first > 0 ? first / (MPC_PPQ * 4) * (MPC_PPQ * 4) : 0;
+    int64_t off = o->trim && first > 0 ? first / (MPC_PPQ * 4) * (MPC_PPQ * 4) : 0;
     qsort(ev, ne, sizeof *ev, ev_cmp);
 
     char tmp[1100];
     snprintf(tmp, sizeof tmp, "%s.part", path);
-    FILE *f = fopen(tmp, "w");
-    if (!f) { free(ev); return -1; }
+    unlink(tmp);   /* a leftover from an interrupted run */
+    int fd = open(tmp, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0644);   /* never write through a planted link */
+    FILE *f = fd >= 0 ? fdopen(fd, "w") : NULL;
+    if (!f) { if (fd >= 0) close(fd); free(ev); return -1; }
     fprintf(f, "{\n    \"pattern\": {\n        \"length\": 9223372036854775807,\n        \"events\": [");
     int w = 0;
     for (int i = 0; i < ne; i++) {
-        long t = ev[i].time - off;
+        int64_t t = ev[i].time - off;
         if (t < 0) continue;
-        fprintf(f, "%s\n            {\n                \"type\": %d,\n                \"time\": %ld,\n"
-                   "                \"len\": %ld,\n", w++ ? "," : "", ev[i].type, t, ev[i].len);
+        fprintf(f, "%s\n            {\n                \"type\": %d,\n                \"time\": %" PRId64 ",\n"
+                   "                \"len\": %" PRId64 ",\n", w++ ? "," : "", ev[i].type, t, ev[i].len);
         if (ev[i].type == 2)
             fprintf(f, "                \"1\": %d,\n                \"2\": %.6f,\n                \"3\": 0,\n"
                        "                \"mod\": 0,\n                \"modVal\": 0.500030517578125,\n"
@@ -280,8 +292,15 @@ int mmc_is_midi(const char *name) {
 }
 
 int mmc_convert_file(const char *midi_path, const char *out_dir, const conv_opts_t *o, char *err, int en) {
-    FILE *f = fopen(midi_path, "rb");
-    if (!f) { snprintf(err, en, "can't open file"); return -1; }
+    int ifd = open(midi_path, O_RDONLY | O_NOFOLLOW);   /* a regular file only: no links, devices or fifos */
+    struct stat ist;
+    if (ifd < 0 || fstat(ifd, &ist) || !S_ISREG(ist.st_mode)) {
+        if (ifd >= 0) close(ifd);
+        snprintf(err, en, "can't open file");
+        return -1;
+    }
+    FILE *f = fdopen(ifd, "rb");
+    if (!f) { close(ifd); snprintf(err, en, "can't open file"); return -1; }
     fseek(f, 0, SEEK_END);
     long len = ftell(f);
     fseek(f, 0, SEEK_SET);
@@ -324,21 +343,31 @@ int mmc_convert_file(const char *midi_path, const char *out_dir, const conv_opts
     int written = 0;
     char path[1024];
     if (np > 1) {
+        char used[MAX_PARTS][64];
         for (int i = 0; i < np; i++) {
             char label[64], pn[64];
             if (!use_ch && s->names[parts[i]][0]) snprintf(label, sizeof label, "%s", s->names[parts[i]]);
             else if (use_ch) snprintf(label, sizeof label, "Ch %d", parts[i] + 1);
             else snprintf(label, sizeof label, "Track %d", parts[i] + 1);
             safe_name(pn, sizeof pn, label);
-            snprintf(path, sizeof path, "%s/%s - %s%s.mpcpattern", out_dir, base, pn[0] ? pn : "Part", bpm);
+            if (!pn[0]) snprintf(pn, sizeof pn, "Part");
+            /* two tracks with the same name must not overwrite each other's pattern */
+            int dup = 1;
+            for (int j = 0; j < i; j++) if (!strcmp(used[j], pn)) dup++;
+            snprintf(used[i], sizeof used[i], "%s", pn);
+            if (dup > 1) { size_t l = strlen(pn); snprintf(pn + (l < 54 ? l : 54), sizeof pn - (l < 54 ? l : 54), " %d", dup); }
+            if (snprintf(path, sizeof path, "%s/%s - %s%s.mpcpattern", out_dir, base, pn, bpm) >= (int)sizeof path) {
+                snprintf(err, en, "path too long"); written = -1; break;
+            }
             int r = write_part(s, parts[i], use_ch, path, o);
             if (r < 0) { snprintf(err, en, "can't write pattern"); written = -1; break; }
             if (r > 0) written++;
         }
     } else {
-        snprintf(path, sizeof path, "%s/%s%s.mpcpattern", out_dir, base, bpm);
-        int r = write_part(s, -1, 0, path, o);
-        if (r < 0) { snprintf(err, en, "can't write pattern"); written = -1; }
+        int r = snprintf(path, sizeof path, "%s/%s%s.mpcpattern", out_dir, base, bpm) >= (int)sizeof path ? -2
+                : write_part(s, -1, 0, path, o);
+        if (r == -2) { snprintf(err, en, "path too long"); written = -1; }
+        else if (r < 0) { snprintf(err, en, "can't write pattern"); written = -1; }
         else if (r == 0) { snprintf(err, en, "no notes in range"); written = -1; }
         else written = 1;
     }

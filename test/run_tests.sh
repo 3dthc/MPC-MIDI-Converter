@@ -23,6 +23,17 @@ assert [(x['time'], x['1'], round(x['2'] * 127)) for x in e][:3] == [(0, 36, 120
 assert max(x['time'] for x in e) == 7200
 print("ok   %d patterns are valid JSON, drum timing and velocity exact" % len(fs))
 PY
+python3 "$T/make_security.py"
+mkdir sec
+check "header length past 2^31 is refused"   '! ./cli hdr_huge.mid sec >/dev/null 2>err && ! grep -q -E "Sanitizer|runtime error" err'
+check "chunk length past 2^31 does not crash" './cli chunk_huge.mid sec >/dev/null 2>err; ! grep -q -E "Sanitizer|runtime error" err'
+check "song longer than 2^31 ticks keeps exact times" './cli long_song.mid sec | grep -q "^1 " && grep -q "\"time\": 53687091190" sec/long_song.mpcpattern'
+check "two tracks with one name make two patterns" './cli same_names.mid sec 1 | grep -q "^2 " && [ -f "sec/same_names - Keys.mpcpattern" ] && [ -f "sec/same_names - Keys 2.mpcpattern" ]'
+check "500000 notes are refused, not eaten" '{ ./cli too_many.mid sec || true; } | grep -q "too many notes"'
+ln -s /etc/hostname link.mid
+check "a linked MIDI file is not read" '{ ./cli link.mid sec || true; } | grep -q "can.t open"'
+echo keep > victim; ln -s "$W/victim" "sec/test_chords_80bpm.mpcpattern.part"
+check "a planted link at the temp file is not written through" './cli test_chords_80bpm.mid sec >/dev/null && [ "$(cat victim)" = keep ]'
 hits=0; for f in fuzz/*.mid; do ./cli "$f" out 1 1 240 3 1 1 >/dev/null 2>err || true; grep -q -E 'Sanitizer|runtime error' err && hits=$((hits+1)); done
 check "300 damaged files: no memory errors" '[ $hits = 0 ]'
 D="$W/root"; mkdir -p "$D/TESTDRIVE/Pack/Sub/Deeper" "$D/az01-internal" "$D/az01-internal-sd"
