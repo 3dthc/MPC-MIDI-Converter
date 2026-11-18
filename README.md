@@ -4,7 +4,31 @@ A free, open-source tool that turns MIDI files (`.mid`, `.midi`) into MPC patter
 Load a pattern onto any track and the notes land in that track, at your project's tempo, without MPC's MIDI import making a new
 sequence.
 
-This is the **MPC plugin**. Windows (`.exe`) and Mac (`.dmg`) versions are planned.
+![MPC MIDI Converter on an MPC Live II](docs/images/main.png)
+
+**[Download the latest release](https://github.com/3dthc/MPC-MIDI-Converter/releases/latest)** (`MPC-MIDI-Converter-<version>-mpc-armv7.zip`)
+
+## Features
+
+- Browse your SD card, internal drive and USB drives right on the MPC's touchscreen
+- Convert one file, or a whole pack with all the folders inside it, keeping the pack's folder structure
+- Patterns land in a **MIDI Converts** folder on the same drive, with the tempo in each name
+- Split multi-track files into one pattern per instrument
+- Map General MIDI drums onto MPC pads
+- Quantize to 1/8, 1/16 or 1/32
+- Large, readable text with a compact list option, and a built-in How To page
+- Damaged or hostile MIDI files are refused safely instead of crashing MPC
+
+## Install
+
+Works on Gen 1 MPCs and the Force (MPC Live, Live II, One, X, Key 61) with MPC OS 3.x.
+
+- **MPC OS 3.10.1 and later:** turn on *Preferences > Enhancements > External Plugin Support*, unzip the release and copy
+  the `3dthc - VST - MPC MIDI Converter` folder into a `VST2 Plugins` folder at the top of any drive.
+- **Or** use the [Open MPC Plugin Manager](https://open-mpc.github.io/install.html) or installer app, or the `install.sh` in
+  the zip (its `INSTALL.md` has every route).
+
+Windows (`.exe`) and Mac (`.dmg`) versions are planned.
 
 ## Using it
 
