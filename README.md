@@ -21,12 +21,18 @@ sequence.
 
 ## Install
 
-Works on Gen 1 MPCs and the Force (MPC Live, Live II, One, X, Key 61) with MPC OS 3.x.
+Works on every standalone MPC and the Force, on MPC OS 2.x and 3.x. Each release has three downloads:
 
-- **MPC OS 3.10.1 and later:** turn on *Preferences > Enhancements > External Plugin Support*, unzip the release and copy
-  the `3dthc - VST - MPC MIDI Converter` folder into a `VST2 Plugins` folder at the top of any drive.
-- **Or** use the [Open MPC Plugin Manager](https://open-mpc.github.io/install.html) or installer app, or the `install.sh` in
-  the zip (its `INSTALL.md` has every route).
+| Download | For |
+|---|---|
+| `MPC-MIDI-Converter-<version>-mpc-armv7.zip` | Gen 1: MPC Live, Live II, One, X, Key 61, Force (MPC OS 2.x and 3.x) |
+| `MPC-MIDI-Converter-<version>-mpc-aarch64.zip` | Gen 2: MPC Live III, One (Gen 2), Key 37 (Gen 2), XL (MPC OS 3.x) |
+| `MPC-MIDI-Converter-<version>-mpc-sdk.zip` | Any MPC on MPC OS 3.10.1 and later: one folder with both builds |
+
+- **MPC OS 3.10.1 and later:** turn on *Preferences > Enhancements > External Plugin Support*, unzip the `-mpc-sdk.zip` and
+  copy its `3dthc - VST - MPC MIDI Converter` folder into a `VST2 Plugins` folder at the top of any drive.
+- **Older MPC OS, or the easy way:** the [Open MPC Plugin Manager](https://open-mpc.github.io/install.html) or installer app,
+  or the `install.sh` in your device's zip (its `INSTALL.md` has every route).
 
 Windows (`.exe`) and Mac (`.dmg`) versions are planned.
 
@@ -73,7 +79,7 @@ Needs Docker and [Open MPC](https://github.com/open-mpc/mpc-vst-plugins) checked
 ```sh
 ./build.sh                      # tests, then builds vst/build/<.so> and the skin
 test/run_tests.sh               # just the tests (converter, damaged and crafted files, the plugin's browser), no Docker
-./release.sh 1.0.1              # checks the toolchain is current, builds, packages and catalog-checks the zip
+./release.sh 1.0.1              # checks the toolchain is current, builds both CPUs, makes the three zips and checks them
 ./release.sh 1.0.1 --publish    # the same, then creates or updates GitHub release v1.0.1 (notes: release-notes/1.0.1.md)
 ```
 

@@ -26,5 +26,9 @@
       "-lm",
       "-lpthread"
     ]
-  }
+  },
+  "targets": [
+    "armv7",
+    "aarch64"
+  ]
 }
