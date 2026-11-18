@@ -1,0 +1,39 @@
+/* MPC MIDI Converter: dark graphite glass, one warm accent. Colours come from the layout's theme_* lines. */
+:root {
+  --radius: 12px;
+  --sheen: 0.06;
+  --label-size: 13px;
+  --seg-size: 14px;
+  --shadow: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.55));
+}
+
+/* cards: frosted panels with a soft edge, no hard border */
+.frame-border { fill: rgba(255, 255, 255, 0.028); stroke: rgba(255, 255, 255, 0.07); stroke-width: 1;
+                rx: 18px; filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.45)); }
+.frame-rule { display: none; }
+
+/* labels above groups: small caps, spaced, quiet */
+.text, .box-label { font-weight: 600; fill: var(--ink-dim); letter-spacing: 0.16em; }
+
+/* text fields: inset glass */
+.box { fill: rgba(0, 0, 0, 0.38); stroke: rgba(255, 255, 255, 0.07); stroke-width: 1; rx: 12px; }
+
+/* list rows: quiet tiles; the picked row gets the accent edge from theme_tile_on */
+.tile { fill: rgba(255, 255, 255, 0.035); rx: 10px; }
+.tile-border { rx: 10px; }
+.tile-rule { display: none; }
+
+/* buttons: raised graphite, a hairline top light; the primary ones are amber with dark text */
+.button-bg { stroke: rgba(255, 255, 255, 0.09); stroke-width: 1; rx: 14px;
+             filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.5)); }
+.button-tx { font-size: 15px !important; font-weight: 700; letter-spacing: 0.14em; fill: #eceef2; }
+.button[style*="e8a23a"] .button-bg { stroke: rgba(255, 230, 180, 0.35); }
+.button[style*="e8a23a"] .button-tx { fill: #1b1206; }
+
+/* option segments: rounded pills split by the background colour */
+.seg-bg { rx: 10px; stroke: #15161b; stroke-width: 4px; }
+.seg-tx { font-weight: 700; letter-spacing: 0.08em; }
+
+/* knob: dark cap, amber arc */
+.knob-face { fill: #2a2d34; filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.6)); }
+.knob-track { stroke: rgba(255, 255, 255, 0.08); }
