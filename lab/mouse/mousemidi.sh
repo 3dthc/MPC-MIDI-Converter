@@ -40,7 +40,7 @@ status)
   if tr '\0' '\n' < /proc/"$P"/environ | grep -q mousemidi; then
     echo "LOADED. Open a sequence in the Grid/track view, then try the mouse:"
     echo "  - scroll wheel         => value steps up/down (+ / -)"
-    echo "  - hold middle + scroll => note-length edit (Shift + / -)"
+    echo "  - tap middle (latch Shift) => then left-click menu options, or scroll for note length"
     echo "  - right-click          => Erase"
     echo "Pointer and left-click still work as normal (the addin never grabs the mouse)."
   else

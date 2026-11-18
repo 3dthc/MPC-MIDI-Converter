@@ -4,8 +4,10 @@
  * left-click (as touch). The mouse's WHEEL and RIGHT/MIDDLE buttons are ignored by MPC. This addin reads the mouse
  * as a second reader (no grab, so pointer/left-click are untouched) and injects panel MIDI into MPC's Private input:
  *   wheel        -> + / - buttons (step the selected value / scroll lists; captured notes 0x36 / 0x37 on an MPC Live)
- *   middle held  -> Shift held    (so middle + wheel = Shift + step = note-length edit)   (Shift note 0x31)
+ *   middle       -> Shift (latch by default: tap on, tap off; or set shift_mode hold)      (Shift note 0x31)
  *   right click  -> Erase                                                                 (Erase note 0x09)
+ * Latch exists because MPC maps all mouse buttons to one touch contact: holding a button blocks left-click, so a
+ * held-Shift + left-click combo can't get through. Latching Shift leaves only the left button pressed at click time.
  * Buttons are note-on on channel 1 (0x90 note 0x7F press / 0x00 release). Overridable in /data/mousemidi.conf.
  *
  * The rawmidi injection (hook snd_rawmidi_open/read + poll with a wake pipe, queue bytes for MPC to read) follows
@@ -15,6 +17,8 @@
 #include <fcntl.h>
 #include <linux/input.h>
 #include <poll.h>
+#include <sys/select.h>
+#include <time.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -38,6 +42,9 @@ static char mouse_dev[128] = "/dev/input/event2";
 static int NOTE_PLUS = 0x36, NOTE_MINUS = 0x37, NOTE_SHIFT = 0x31, NOTE_ERASE = 0x09;
 static int invert = 0, use_cc = 0;         /* use_cc 1: inject jog CC B0 64 01/7F instead of +/- buttons */
 static int shift_btn = BTN_MIDDLE, erase_btn = BTN_RIGHT;
+static int shift_latch = 1;                /* 1 latch (tap on/off), 0 hold-while-pressed */
+static int shift_timeout = 12;             /* latch auto-release after this many idle seconds (0 = never) */
+static int shift_on = 0;                   /* current latched Shift state */
 
 static void *next_sym(const char *name) {
     static void *(*libc_dlsym)(void *, const char *);
@@ -99,6 +106,8 @@ static void load_conf(void) {
         else if (!strcmp(k, "cc")) use_cc = parse_int(v);
         else if (!strcmp(k, "shift_btn")) shift_btn = !strcmp(v, "right") ? BTN_RIGHT : BTN_MIDDLE;
         else if (!strcmp(k, "erase_btn")) erase_btn = !strcmp(v, "middle") ? BTN_MIDDLE : BTN_RIGHT;
+        else if (!strcmp(k, "shift_mode")) shift_latch = !strcmp(v, "hold") ? 0 : 1;
+        else if (!strcmp(k, "shift_timeout")) shift_timeout = parse_int(v);
     }
     fclose(f);
 }
@@ -109,19 +118,37 @@ static void step(int dir) {   /* dir +1 up / -1 down (after invert) */
     else tap(dir > 0 ? NOTE_PLUS : NOTE_MINUS);
 }
 
+static void shift_set(int on) {   /* latch: assert/release Shift, only on a real change */
+    if (on == shift_on) return;
+    shift_on = on;
+    q3(0x90, NOTE_SHIFT, on ? 0x7F : 0x00);
+}
+
 static void *mouse_thread(void *arg) {
     (void)arg;
     int fd = -1;
+    time_t last = 0;
     for (;;) {
         if (fd < 0) { fd = open(mouse_dev, O_RDONLY); if (fd < 0) { sleep(2); continue; } }
+        fd_set r; FD_ZERO(&r); FD_SET(fd, &r);
+        struct timeval tv = {1, 0};   /* tick once a second only while a latch could time out */
+        int sel = select(fd + 1, &r, NULL, NULL,
+                         (shift_latch && shift_on && shift_timeout > 0) ? &tv : NULL);
+        if (sel == 0) {   /* timed out with Shift latched and idle -> release it */
+            if (last && time(NULL) - last >= shift_timeout) shift_set(0);
+            continue;
+        }
+        if (sel < 0) continue;
         struct input_event e;
         ssize_t n = read(fd, &e, sizeof e);
         if (n != (ssize_t)sizeof e) { close(fd); fd = -1; sleep(1); continue; }
+        last = time(NULL);
         if (e.type == EV_REL && e.code == REL_WHEEL) {
             int c = e.value < 0 ? -e.value : e.value, d = e.value > 0 ? 1 : -1;
             for (int i = 0; i < c && i < 8; i++) step(d);
         } else if (e.type == EV_KEY && e.code == shift_btn) {
-            q3(0x90, NOTE_SHIFT, e.value ? 0x7F : 0x00);    /* hold Shift while the button is held */
+            if (shift_latch) { if (e.value == 1) shift_set(!shift_on); }   /* tap toggles */
+            else q3(0x90, NOTE_SHIFT, e.value ? 0x7F : 0x00);             /* hold while pressed */
         } else if (e.type == EV_KEY && e.code == erase_btn && e.value == 1) {
             tap(NOTE_ERASE);
         }
