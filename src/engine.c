@@ -44,7 +44,7 @@ typedef struct {
 
     char dir[1024];               /* folder shown */
     ent_t *ent; int nent;         /* its entries: folders first, then MIDI files */
-    int page, sel;                /* sel: entry index of the chosen file, -1 none */
+    int top, sel;                 /* top: entry shown in the first row; sel: the highlighted entry, -1 none */
     char status[128];
     unsigned rev;
 
@@ -61,6 +61,8 @@ static long long now_ms(void) {
     return (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 static int rows_of(const st_t *s) { return s->more ? ROWS_MORE : ROWS_BIG; }
+static int max_top(const st_t *s) { return s->nent > rows_of(s) ? s->nent - rows_of(s) : 0; }
+static void clamp_top(st_t *s) { if (s->top > max_top(s)) s->top = max_top(s); if (s->top < 0) s->top = 0; }
 
 static void set_status(st_t *s, const char *msg) {
     pthread_mutex_lock(&s->mu);
@@ -138,11 +140,11 @@ static int list_dir(st_t *s, const char *dir, const char *select) {
     free(s->ent);
     s->ent = e; s->nent = n;
     snprintf(s->dir, sizeof s->dir, "%s", dir);
-    s->page = 0; s->sel = -1;
+    s->top = 0; s->sel = -1;
     s->nav_ms = now_ms();
     if (select)
         for (int i = 0; i < n; i++)
-            if (!strcmp(e[i].name, select)) { s->page = i / rows_of(s); s->sel = e[i].dir ? -1 : i; break; }
+            if (!strcmp(e[i].name, select)) { s->top = i; clamp_top(s); s->sel = i; break; }
     snprintf(s->status, sizeof s->status, n ? "Pick a MIDI file, or convert the whole folder" :
              top ? "No drives found" : "No MIDI files or folders here");
     bump(s);
@@ -391,50 +393,34 @@ static void set_param(void *inst, const char *key, const char *val) {
     double v = atof(val);
     pthread_mutex_lock(&s->mu);
     if (!strncmp(key, "row_", 4) && key[4] >= '1' && key[4] <= '8' && !key[5]) {
-        /* A row is a drawn button (a momentary trigger: the wrapper drops the second press of one touch).
-         * Like MPC's browser: a folder opens on a tap, a MIDI file is picked (and a tap on the picked file converts it). */
+        /* A row is a drawn button (a momentary trigger: the wrapper drops the second press of one touch). Like MPC's
+         * browser: the first tap highlights a folder or a file, a second tap on the highlighted row opens the folder
+         * or converts the file. */
         long long t = now_ms();
         if (v > 0.5 && !s->help && key[4] - '1' < rows_of(s) && t - s->nav_ms >= SETTLE_MS) {
-            int i = s->page * rows_of(s) + (key[4] - '1');
-            if (i < s->nent) {
-                if (s->ent[i].dir) post(s, CMD_ENTER, s->ent[i].name);
-                else if (!s->busy) {
-                    if (s->sel == i) { if (t - s->pick_ms >= AGAIN_MS) post(s, CMD_CONVERT, s->ent[i].name); }
-                    else {
-                        s->sel = i;
-                        s->pick_ms = t;
-                        snprintf(s->status, sizeof s->status, "Tap again or CONVERT FILE");
-                    }
-                }
-            }
-            bump(s);
-        }
-    } else if (!strncmp(key, "file_", 5) && key[5] >= '1' && key[5] <= '8' && !key[6]) {
-        /* A tap on a list row. MPC's row is a toggle, so a tap can arrive as 1 or as 0 (a row MPC still shows as on
-         * from the last tap); the wrapper already drops its own echoes. Any value is a tap, and a second call within
-         * TAP_MS (one touch reported twice) is ignored. */
-        long long t = now_ms();
-        int fresh = t - s->last_tap_ms >= TAP_MS;
-        if (fresh) s->last_tap_ms = t;
-        if (fresh) {
-            if (key[5] - '1' >= rows_of(s)) { pthread_mutex_unlock(&s->mu); return; }
-            int i = s->page * rows_of(s) + (key[5] - '1');
-            if (i < s->nent) {
-                if (s->ent[i].dir) post(s, CMD_ENTER, s->ent[i].name);
-                else if (!s->busy) {
+            int i = s->top + (key[4] - '1');
+            if (i < s->nent && !s->busy) {
+                if (s->sel == i) {
+                    if (t - s->pick_ms >= AGAIN_MS) post(s, s->ent[i].dir ? CMD_ENTER : CMD_CONVERT, s->ent[i].name);
+                } else {
                     s->sel = i;
-                    snprintf(s->status, sizeof s->status, "Selected. Tap CONVERT FILE");
+                    s->pick_ms = t;
+                    snprintf(s->status, sizeof s->status, s->ent[i].dir ? "Tap again to open" : "Tap again or CONVERT FILE");
                 }
             }
             bump(s);
         }
     } else if (!strcmp(key, "up")) { if (v > 0.5) post(s, CMD_UP, NULL); }
-    else if (!strcmp(key, "prev")) { if (v > 0.5 && s->page > 0) { s->page--; s->nav_ms = now_ms(); bump(s); } }
-    else if (!strcmp(key, "next")) { if (v > 0.5 && (s->page + 1) * rows_of(s) < s->nent) { s->page++; s->nav_ms = now_ms(); bump(s); } }
+    else if (!strcmp(key, "prev")) { if (v > 0.5 && s->top > 0) { s->top -= rows_of(s); clamp_top(s); s->nav_ms = now_ms(); bump(s); } }
+    else if (!strcmp(key, "next")) { if (v > 0.5 && s->top < max_top(s)) { s->top += rows_of(s); clamp_top(s); s->nav_ms = now_ms(); bump(s); } }
+    else if (!strcmp(key, "scroll")) {   /* the scroll bar: 1 at the top of the list, 0 at the end */
+        int m = max_top(s), t2 = (int)((1.0 - (v < 0 ? 0 : v > 1 ? 1 : v)) * m + 0.5);
+        if (t2 != s->top) { s->top = t2; s->nav_ms = now_ms(); bump(s); }
+    }
     else if (!strcmp(key, "refresh")) { if (v > 0.5) post(s, CMD_LIST, s->dir); }
     else if (!strcmp(key, "convert")) {
         if (v > 0.5) {
-            if (s->sel >= 0 && s->sel < s->nent) post(s, CMD_CONVERT, s->ent[s->sel].name);
+            if (s->sel >= 0 && s->sel < s->nent && !s->ent[s->sel].dir) post(s, CMD_CONVERT, s->ent[s->sel].name);
             else { snprintf(s->status, sizeof s->status, "Pick a MIDI file first"); bump(s); }
         }
     } else if (!strcmp(key, "convert_all")) { if (v > 0.5) post(s, CMD_BATCH, NULL); }
@@ -449,9 +435,8 @@ static void set_param(void *inst, const char *key, const char *val) {
     else if (!strcmp(key, "rows")) {
         int m = clampi((int)v, 0, 1);
         if (m != s->more) {   /* keep the first row on screen in view */
-            int first = s->page * rows_of(s);
             s->more = m;
-            s->page = first / rows_of(s);
+            clamp_top(s);
             bump(s);
         }
     }
@@ -503,10 +488,9 @@ static int get_param(void *inst, const char *key, char *b, int n) {
         }
     } else if (!strcmp(key, "status")) r = snprintf(b, n, "%s", s->status);
     else if (!strcmp(key, "page")) {
-        int pages = (s->nent + rows_of(s) - 1) / rows_of(s);
-        r = snprintf(b, n, "%d / %d", pages ? s->page + 1 : 0, pages);
+        r = snprintf(b, n, "%d", s->nent);
     } else if (!strncmp(key, "file_", 5) && key[5] >= '1' && key[5] <= '8') {
-        int i = s->page * rows_of(s) + (key[5] - '1');
+        int i = s->top + (key[5] - '1');
         if (key[5] - '1' >= rows_of(s)) i = s->nent;
         if (!key[6]) {   /* the row's text: folders end in " /" */
             if (i < s->nent) {
@@ -527,11 +511,12 @@ static int get_param(void *inst, const char *key, char *b, int n) {
     else if (!strcmp(key, "help")) r = snprintf(b, n, "%d", s->help);
     else if (!strcmp(key, "rows")) r = snprintf(b, n, "%d", s->more);
     else if (!strcmp(key, "selrow")) {   /* which row draws the picked-file highlight: 0 none, 1-5 big list, 6-13 long list */
-        int on = s->sel >= 0 && !s->help && s->sel / rows_of(s) == s->page;
-        r = snprintf(b, n, "%d", on ? (s->more ? 6 : 1) + s->sel % rows_of(s) : 0);
+        int on = s->sel >= s->top && s->sel < s->top + rows_of(s) && !s->help;
+        r = snprintf(b, n, "%d", on ? (s->more ? 6 : 1) + s->sel - s->top : 0);
     } else if (!strcmp(key, "row_1") || !strcmp(key, "row_2") || !strcmp(key, "row_3") || !strcmp(key, "row_4") ||
                !strcmp(key, "row_5") || !strcmp(key, "row_6") || !strcmp(key, "row_7") || !strcmp(key, "row_8"))
         r = snprintf(b, n, "0");
+    else if (!strcmp(key, "scroll")) { int m = max_top(s); r = snprintf(b, n, "%.4f", m ? 1.0 - (double)s->top / m : 1.0); }
     else if (!strcmp(key, "view")) r = snprintf(b, n, "%d", s->help ? 2 : s->more);   /* drives the page: set by the engine only */
     else if (!strcmp(key, "state"))
         r = snprintf(b, n, "opts=%d,%d,%d,%d,%d,%d,%d,%d\ndir=%s\n", s->split, s->drums, s->quant, s->transpose, s->trim,

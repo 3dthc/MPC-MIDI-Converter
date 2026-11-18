@@ -19,7 +19,7 @@ static int row_of(const char *name) {
 static void tap_row(int r) { usleep(550000); char k[24]; sprintf(k, "row_%d", r); E->set_param(I, k, "1"); E->set_param(I, k, "0"); }
 static int fails;
 static void check(int ok, const char *what) { printf("%s %s\n", ok ? "ok  " : "FAIL", what); fails += !ok; }
-static void open_row(const char *name) { int r = row_of(name); if (r) tap_row(r); settle(); }
+static void open_row(const char *name) { int r = row_of(name); if (r) { tap_row(r); tap_row(r); } settle(); }
 int main(void) {
     E = mpc_engine();
     I = E->create(NULL); settle();
@@ -35,7 +35,9 @@ int main(void) {
     check(row_of("notes.txt") == 0, "non-MIDI files hidden");
     { int r1 = row_of("Sub"); char k1[24]; sprintf(k1, "row_%d", r1);
       usleep(550000); E->set_param(I, k1, "1"); usleep(50000);
-      check(strstr(get("folder"), "Sub") != NULL, "a row tap opens the folder");
+      check(strstr(get("folder"), "Pack") != NULL && !strcmp(get("selrow"), "1"), "first tap on a folder only highlights it");
+      usleep(450000); E->set_param(I, k1, "1"); usleep(50000);
+      check(strstr(get("folder"), "Sub") != NULL, "second tap opens it");
       E->set_param(I, "row_1", "1"); settle();   /* the same touch landing on the new list */
       check(strstr(get("folder"), "Deeper") == NULL, "a tap just after a folder opens is ignored");
       tap("up"); settle(); }
@@ -43,6 +45,10 @@ int main(void) {
     check(strstr(get("folder"), "Sub") != NULL, "a row tap opens the folder");
     tap("up"); settle();
     check(strstr(get("folder"), "Pack") != NULL, "BACK returns");
+    E->set_param(I, "scroll", "0"); usleep(20000);
+    check(!strcmp(get("file_1"), " ") || row_of("multi_f1") > 0, "scroll to the end keeps a full page");
+    E->set_param(I, "scroll", "1");
+    check(row_of("Sub") == 1, "scroll back to the top");
     E->set_param(I, "rows", "1");
     check(!strcmp(get("view"), "1"), "list size More switches the view");
     check(row_of("multi_f1") > 0, "8 rows: files on page 1");
