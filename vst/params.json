@@ -191,6 +191,25 @@
     "On"
    ],
    "automatable": false
+  },
+  {
+   "key": "rows",
+   "name": "List Size",
+   "options": [
+    "Big",
+    "More"
+   ],
+   "automatable": false
+  },
+  {
+   "key": "view",
+   "name": "View",
+   "options": [
+    "big",
+    "more",
+    "help"
+   ],
+   "automatable": false
   }
  ]
 }

@@ -32,6 +32,14 @@ int main(void) {
     printf("     rows: [%s] ", get("file_1")); printf("[%s] ", get("file_2")); printf("[%s]\n", get("file_3"));
     check(row_of("Sub") == 1, "folders listed first");
     check(row_of("notes.txt") == 0, "non-MIDI files hidden");
+    E->set_param(I, "rows", "1");
+    check(!strcmp(get("view"), "1"), "list size More switches the view");
+    check(row_of("multi_f1") > 0, "8 rows: files on page 1");
+    E->set_param(I, "rows", "0");
+    check(!strcmp(get("file_8"), " "), "5 rows: row 8 is empty");
+    E->set_param(I, "help", "1");
+    check(!strcmp(get("view"), "2"), "HOW TO switches the view");
+    E->set_param(I, "help", "0");
     tap("convert"); settle();
     check(strstr(get("status"), "Pick a MIDI") != NULL, "convert with nothing picked asks for a file");
     int r = row_of("multi_f1"); char k[24]; sprintf(k, "file_%d", r); tap(k); sprintf(k, "file_%d_on", r);

@@ -16,7 +16,8 @@
 #ifndef MMC_ROOT
 #define MMC_ROOT "/media"        /* MPC drives are mounted here; the top of the browser */
 #endif
-#define ROWS 8
+#define ROWS_BIG 5
+#define ROWS_MORE 8
 #define MAX_ENT 4000
 #define BATCH_DEPTH 4             /* folder levels a batch goes into below the chosen folder */
 #define OUT_DIR "MIDI Import"
@@ -41,10 +42,11 @@ typedef struct {
     char status[128];
     unsigned rev;
 
-    int split, drums, quant, transpose, trim, save_next, bpm_name, help;
+    int split, drums, quant, transpose, trim, save_next, bpm_name, help, more;
 } st_t;
 
 static void bump(st_t *s) { s->rev++; }
+static int rows_of(const st_t *s) { return s->more ? ROWS_MORE : ROWS_BIG; }
 
 static void set_status(st_t *s, const char *msg) {
     pthread_mutex_lock(&s->mu);
@@ -125,7 +127,7 @@ static int list_dir(st_t *s, const char *dir, const char *select) {
     s->page = 0; s->sel = -1;
     if (select)
         for (int i = 0; i < n; i++)
-            if (!strcmp(e[i].name, select)) { s->page = i / ROWS; s->sel = e[i].dir ? -1 : i; break; }
+            if (!strcmp(e[i].name, select)) { s->page = i / rows_of(s); s->sel = e[i].dir ? -1 : i; break; }
     snprintf(s->status, sizeof s->status, n ? "Pick a MIDI file, or convert the whole folder" :
              top ? "No drives found" : "No MIDI files or folders here");
     bump(s);
@@ -357,7 +359,8 @@ static void set_param(void *inst, const char *key, const char *val) {
     pthread_mutex_lock(&s->mu);
     if (!strncmp(key, "file_", 5) && key[5] >= '1' && key[5] <= '8' && !key[6]) {
         if (v > 0.5) {   /* a tap on a list row (the release and the host's echo come as 0) */
-            int i = s->page * ROWS + (key[5] - '1');
+            if (key[5] - '1' >= rows_of(s)) { pthread_mutex_unlock(&s->mu); return; }
+            int i = s->page * rows_of(s) + (key[5] - '1');
             if (i < s->nent) {
                 if (s->ent[i].dir) post(s, CMD_ENTER, s->ent[i].name);
                 else if (!s->busy) {
@@ -369,7 +372,7 @@ static void set_param(void *inst, const char *key, const char *val) {
         }
     } else if (!strcmp(key, "up")) { if (v > 0.5) post(s, CMD_UP, NULL); }
     else if (!strcmp(key, "prev")) { if (v > 0.5 && s->page > 0) { s->page--; bump(s); } }
-    else if (!strcmp(key, "next")) { if (v > 0.5 && (s->page + 1) * ROWS < s->nent) { s->page++; bump(s); } }
+    else if (!strcmp(key, "next")) { if (v > 0.5 && (s->page + 1) * rows_of(s) < s->nent) { s->page++; bump(s); } }
     else if (!strcmp(key, "refresh")) { if (v > 0.5) post(s, CMD_LIST, s->dir); }
     else if (!strcmp(key, "convert")) {
         if (v > 0.5) {
@@ -385,13 +388,22 @@ static void set_param(void *inst, const char *key, const char *val) {
     else if (!strcmp(key, "save_to")) s->save_next = clampi((int)v, 0, 1);
     else if (!strcmp(key, "bpm_name")) s->bpm_name = clampi((int)v, 0, 1);
     else if (!strcmp(key, "help")) { s->help = clampi((int)v, 0, 1); bump(s); }
+    else if (!strcmp(key, "rows")) {
+        int m = clampi((int)v, 0, 1);
+        if (m != s->more) {   /* keep the first row on screen in view */
+            int first = s->page * rows_of(s);
+            s->more = m;
+            s->page = first / rows_of(s);
+            bump(s);
+        }
+    }
     else if (!strcmp(key, "state")) {
-        int o[7];
+        int o[8] = {0};
         const char *dl = strstr(val, "\ndir=");
-        if (sscanf(val, "opts=%d,%d,%d,%d,%d,%d,%d", &o[0], &o[1], &o[2], &o[3], &o[4], &o[5], &o[6]) == 7) {
+        if (sscanf(val, "opts=%d,%d,%d,%d,%d,%d,%d,%d", &o[0], &o[1], &o[2], &o[3], &o[4], &o[5], &o[6], &o[7]) >= 7) {
             s->split = clampi(o[0], 0, 1); s->drums = clampi(o[1], 0, 1); s->quant = clampi(o[2], 0, NQUANT - 1);
             s->transpose = clampi(o[3], -24, 24); s->trim = clampi(o[4], 0, 1);
-            s->save_next = clampi(o[5], 0, 1); s->bpm_name = clampi(o[6], 0, 1);
+            s->save_next = clampi(o[5], 0, 1); s->bpm_name = clampi(o[6], 0, 1); s->more = clampi(o[7], 0, 1);
         }
         if (dl) {
             char d[1024];
@@ -433,10 +445,11 @@ static int get_param(void *inst, const char *key, char *b, int n) {
         }
     } else if (!strcmp(key, "status")) r = snprintf(b, n, "%s", s->status);
     else if (!strcmp(key, "page")) {
-        int pages = (s->nent + ROWS - 1) / ROWS;
+        int pages = (s->nent + rows_of(s) - 1) / rows_of(s);
         r = snprintf(b, n, "%d / %d", pages ? s->page + 1 : 0, pages);
     } else if (!strncmp(key, "file_", 5) && key[5] >= '1' && key[5] <= '8') {
-        int i = s->page * ROWS + (key[5] - '1');
+        int i = s->page * rows_of(s) + (key[5] - '1');
+        if (key[5] - '1' >= rows_of(s)) i = s->nent;
         if (!key[6]) {   /* the row's text: folders end in " /" */
             if (i < s->nent) {
                 const char *nm = strcmp(s->dir, MMC_ROOT) ? s->ent[i].name : drive_label(s->ent[i].name);
@@ -454,9 +467,11 @@ static int get_param(void *inst, const char *key, char *b, int n) {
     else if (!strcmp(key, "save_to")) r = snprintf(b, n, "%d", s->save_next);
     else if (!strcmp(key, "bpm_name")) r = snprintf(b, n, "%d", s->bpm_name);
     else if (!strcmp(key, "help")) r = snprintf(b, n, "%d", s->help);
+    else if (!strcmp(key, "rows")) r = snprintf(b, n, "%d", s->more);
+    else if (!strcmp(key, "view")) r = snprintf(b, n, "%d", s->help ? 2 : s->more);   /* drives the page: set by the engine only */
     else if (!strcmp(key, "state"))
-        r = snprintf(b, n, "opts=%d,%d,%d,%d,%d,%d,%d\ndir=%s\n", s->split, s->drums, s->quant, s->transpose, s->trim,
-                     s->save_next, s->bpm_name, s->dir);
+        r = snprintf(b, n, "opts=%d,%d,%d,%d,%d,%d,%d,%d\ndir=%s\n", s->split, s->drums, s->quant, s->transpose, s->trim,
+                     s->save_next, s->bpm_name, s->more, s->dir);
     pthread_mutex_unlock(&s->mu);
     if (r >= n) r = n - 1;
     return r;
