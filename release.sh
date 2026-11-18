@@ -18,7 +18,8 @@ echo "== checking the Open MPC toolchain"
 git -C "$MV" fetch -q "$UPSTREAM" main
 if ! git -C "$MV" merge-base --is-ancestor FETCH_HEAD HEAD; then
   echo "Your mpc-vst-plugins is behind Open MPC. Update it first:"
-  echo "  git -C \"$MV\" pull $UPSTREAM main"
+  echo "  git -C \"$MV\" pull --no-rebase $UPSTREAM main"
+  echo "(if it says local changes would be overwritten: git -C \"$MV\" stash, run the pull, then git -C \"$MV\" stash show -p to see what was set aside)"
   exit 1
 fi
 
