@@ -1,6 +1,6 @@
-# MouseMIDI addin - drive MPC editing from a USB mouse. Plain assignments only (install.sh sources this as root).
-ADDIN_ID=mousemidi
-ADDIN_NAME="MouseMIDI"
-ADDIN_SO=mousemidi.so
-ADDIN_CONF=mousemidi.conf
-ADDIN_DONE="MouseMIDI is on. Wheel steps values (accelerates on a fast spin); right-click = Erase; middle = Shift latch; rear side = Stop; front side = Play. Auto-detects mice, hot-plug included. Retune in /data/mpc-addins/mousemidi/mousemidi.conf."
+# MIDIMouse addin - drive MPC editing from a USB mouse. Plain assignments only (install.sh sources this as root).
+ADDIN_ID=midimouse
+ADDIN_NAME="MIDIMouse"
+ADDIN_SO=midimouse.so
+ADDIN_CONF=midimouse.conf
+ADDIN_DONE="MIDIMouse is on. Wheel steps values (accelerates on a fast spin); right-click = Erase; middle = Shift latch; rear side = Stop; front side = Play. Auto-detects mice, hot-plug included. Retune in /data/mpc-addins/midimouse/midimouse.conf - applies live."

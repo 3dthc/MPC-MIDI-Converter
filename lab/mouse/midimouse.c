@@ -1,4 +1,4 @@
-/* mousemidi: let a USB mouse drive MPC standalone editing, cleanly.
+/* midimouse: let a USB mouse drive MPC standalone editing, cleanly.
  *
  * MPC reads the panel as ALSA rawmidi on a "Private" port and already reads the USB mouse for the pointer and
  * left-click (as touch). The mouse's WHEEL and RIGHT/MIDDLE buttons are ignored by MPC. This addin reads the mouse
@@ -12,7 +12,7 @@
  * with a reader per mouse, so the regular and 5-button mice both work and swapping needs no config.
  * Latch exists because MPC maps all mouse buttons to one touch contact: holding a button blocks left-click, so a
  * held-Shift + left-click combo can't get through. Latching Shift leaves only the left button pressed at click time.
- * Buttons are note-on on channel 1 (0x90 note 0x7F press / 0x00 release). Overridable in /data/mousemidi.conf.
+ * Buttons are note-on on channel 1 (0x90 note 0x7F press / 0x00 release). Overridable in /data/midimouse.conf.
  *
  * The rawmidi injection (hook snd_rawmidi_open/read + poll with a wake pipe, queue bytes for MPC to read) follows
  * hwremap by mmiroshnikov (MIT, open-mpc/mpc-vst-plugins tools/mpc_patch/hwremap). This file is MIT too. */
@@ -42,7 +42,7 @@ static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 static unsigned char q[QSIZE];
 static int qhead, qtail;
 
-/* config (overridable via the addin's mousemidi.conf: key value per line) */
+/* config (overridable via the addin's midimouse.conf: key value per line) */
 static char mouse_dev[128] = "auto";       /* "auto" = read every mouse found; or a specific /dev/input/eventN */
 static int NOTE_PLUS = 0x36, NOTE_MINUS = 0x37, NOTE_SHIFT = 0x31, NOTE_ERASE = 0x09;
 static int NOTE_PLAY = 0x53, NOTE_STOP = 0x51, NOTE_REC = 0x52, NOTE_MENU = 0x7B, NOTE_MAIN = 0x34;  /* captured, MPC Live II */
@@ -95,9 +95,9 @@ static int parse_int(const char *s) {   /* 0x.. hex or plain decimal; no libc st
     return v * sign;
 }
 static void load_conf(void) {
-    /* the packaged addin keeps its conf in its own folder; /data/mousemidi.conf is the lab-loader fallback */
-    FILE *f = fopen("/data/mpc-addins/mousemidi/mousemidi.conf", "r");
-    if (!f) f = fopen("/data/mousemidi.conf", "r");
+    /* the packaged addin keeps its conf in its own folder; /data/midimouse.conf is the lab-loader fallback */
+    FILE *f = fopen("/data/mpc-addins/midimouse/midimouse.conf", "r");
+    if (!f) f = fopen("/data/midimouse.conf", "r");
     if (!f) return;
     char line[160];
     while (fgets(line, sizeof line, f)) {
