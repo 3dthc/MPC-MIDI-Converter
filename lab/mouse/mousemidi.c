@@ -48,7 +48,7 @@ static int shift_timeout = 12;             /* latch auto-release after this many
 static int shift_on = 0;                   /* current latched Shift state */
 /* wheel also scrolls the view: each notch injects a one-finger touch-drag into the touchscreen (hwremap's channel).
  * Keeps the +/- step too - harmless with nothing selected. */
-static int wheel_scroll = 1;               /* 1 on, 0 off */
+static int wheel_scroll = 0;               /* 1 on, 0 off */
 static char touch_dev[128] = "/dev/input/event0";
 static int scroll_pct = 18;                /* drag length per notch, percent of screen height */
 static int scroll_invert = 0;
