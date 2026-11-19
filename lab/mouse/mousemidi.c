@@ -45,8 +45,9 @@ static int qhead, qtail;
 /* config (overridable via the addin's mousemidi.conf: key value per line) */
 static char mouse_dev[128] = "auto";       /* "auto" = read every mouse found; or a specific /dev/input/eventN */
 static int NOTE_PLUS = 0x36, NOTE_MINUS = 0x37, NOTE_SHIFT = 0x31, NOTE_ERASE = 0x09;
-static int NOTE_PLAY = 0x53, NOTE_MENU = 0x7B, NOTE_MAIN = 0x34;   /* captured on an MPC Live II */
+static int NOTE_PLAY = 0x53, NOTE_STOP = 0x51, NOTE_REC = 0x52, NOTE_MENU = 0x7B, NOTE_MAIN = 0x34;  /* captured, MPC Live II */
 static int invert = 0, use_cc = 0;         /* use_cc 1: inject jog CC B0 64 01/7F instead of +/- buttons */
+static int wheel_accel = 1;                /* 1: fast spins step more per notch, like the data wheel */
 static int shift_latch = 1;                /* 1 latch (tap on/off), 0 hold-while-pressed */
 static int shift_timeout = 12;             /* latch auto-release after this many idle seconds (0 = never) */
 static int shift_on = 0;                   /* current latched Shift state (shared across mice) */
@@ -55,7 +56,7 @@ static volatile time_t last_activity = 0;
 /* per-button actions, resolved in do_button(): none | shift | erase | play | menu | main */
 static char act_middle[16]    = "shift";   /* 3-button mice reach Shift here */
 static char act_right[16]     = "erase";
-static char act_side_back[16] = "shift";   /* BTN_SIDE  - rear thumb button (5-button mice) */
+static char act_side_back[16] = "stop";    /* BTN_SIDE  - rear thumb button (5-button mice) */
 static char act_side_fwd[16]  = "play";    /* BTN_EXTRA - front thumb button (5-button mice) */
 
 static void *next_sym(const char *name) {
@@ -115,10 +116,13 @@ static void load_conf(void) {
         else if (!strcmp(k, "note_shift")) NOTE_SHIFT = parse_int(v);
         else if (!strcmp(k, "note_erase")) NOTE_ERASE = parse_int(v);
         else if (!strcmp(k, "note_play")) NOTE_PLAY = parse_int(v);
+        else if (!strcmp(k, "note_stop")) NOTE_STOP = parse_int(v);
+        else if (!strcmp(k, "note_rec")) NOTE_REC = parse_int(v);
         else if (!strcmp(k, "note_menu")) NOTE_MENU = parse_int(v);
         else if (!strcmp(k, "note_main")) NOTE_MAIN = parse_int(v);
         else if (!strcmp(k, "invert")) invert = parse_int(v);
         else if (!strcmp(k, "cc")) use_cc = parse_int(v);
+        else if (!strcmp(k, "wheel_accel")) wheel_accel = parse_int(v);
         else if (!strcmp(k, "shift_mode")) shift_latch = !strcmp(v, "hold") ? 0 : 1;
         else if (!strcmp(k, "shift_timeout")) shift_timeout = parse_int(v);
         else if (!strcmp(k, "btn_middle")) snprintf(act_middle, sizeof act_middle, "%s", v);
@@ -154,6 +158,8 @@ static void do_button(const char *act, int pressed) {
     if (!pressed) return;                                          /* tap actions fire on press only */
     int note = !strcmp(act, "erase") ? NOTE_ERASE
              : !strcmp(act, "play")  ? NOTE_PLAY
+             : !strcmp(act, "stop")  ? NOTE_STOP
+             : !strcmp(act, "rec")   ? NOTE_REC
              : !strcmp(act, "menu")  ? NOTE_MENU
              : !strcmp(act, "main")  ? NOTE_MAIN : -1;
     if (note >= 0) tap(note);
@@ -192,7 +198,15 @@ static void *mouse_thread(void *arg) {
         last_activity = time(NULL);
         if (e.type == EV_REL && e.code == REL_WHEEL) {
             int c = e.value < 0 ? -e.value : e.value, d = e.value > 0 ? 1 : -1;
-            for (int i = 0; i < c && i < 8; i++) step(d);          /* value step; inert if nothing selected */
+            int mul = 1;
+            if (wheel_accel) {                                     /* fast spin -> bigger jumps, like the data wheel */
+                static long last_ms = 0;
+                struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
+                long ms = t.tv_sec * 1000 + t.tv_nsec / 1000000, dt = ms - last_ms; last_ms = ms;
+                mul = dt < 35 ? 5 : dt < 70 ? 3 : dt < 140 ? 2 : 1;
+            }
+            int reps = c * mul; if (reps > 16) reps = 16;
+            for (int i = 0; i < reps; i++) step(d);                /* value step; inert if nothing selected */
         } else if (e.type == EV_KEY && e.value != 2) {             /* ignore key autorepeat (value 2) */
             int pressed = e.value ? 1 : 0;
             switch (e.code) {
@@ -207,24 +221,36 @@ static void *mouse_thread(void *arg) {
     return NULL;
 }
 
-static void start_mouse_threads(void) {   /* one reader per mouse, so both mice work and swapping needs nothing */
-    pthread_t t;
-    if (strcmp(mouse_dev, "auto")) {       /* explicit device path */
-        char *p = strdup(mouse_dev);
-        if (p) { pthread_create(&t, NULL, mouse_thread, p); pthread_detach(t); }
-        return;
+/* one reader per mouse, tracked so we never double-attach and so hot-plugged mice are picked up */
+static char attached[32][32];
+static int n_attached;
+static pthread_mutex_t att_lock = PTHREAD_MUTEX_INITIALIZER;
+static void attach(const char *path) {
+    pthread_mutex_lock(&att_lock);
+    int have = 0;
+    for (int i = 0; i < n_attached; i++) if (!strcmp(attached[i], path)) { have = 1; break; }
+    if (!have && n_attached < 32) {
+        snprintf(attached[n_attached++], 32, "%s", path);
+        char *p = strdup(path);
+        if (p) { pthread_t t; pthread_create(&t, NULL, mouse_thread, p); pthread_detach(t); }
     }
-    int found = 0;
+    pthread_mutex_unlock(&att_lock);
+}
+static void scan_mice(void) {
     for (int i = 0; i < 32; i++) {
         char path[32]; snprintf(path, sizeof path, "/dev/input/event%d", i);
-        if (!is_mouse(path)) continue;
-        char *p = strdup(path);
-        if (p) { pthread_create(&t, NULL, mouse_thread, p); pthread_detach(t); found++; }
+        if (is_mouse(path)) attach(path);
     }
-    if (!found) {                          /* nothing detected: fall back to the usual node */
-        char *p = strdup("/dev/input/event2");
-        if (p) { pthread_create(&t, NULL, mouse_thread, p); pthread_detach(t); }
-    }
+}
+static void *monitor_thread(void *arg) {   /* catch a mouse plugged in after MPC started */
+    (void)arg;
+    for (;;) { sleep(2); scan_mice(); }
+    return NULL;
+}
+static void start_mouse_threads(void) {
+    if (strcmp(mouse_dev, "auto")) { attach(mouse_dev); return; }   /* explicit device path, no monitor */
+    scan_mice();
+    pthread_t t; pthread_create(&t, NULL, monitor_thread, NULL); pthread_detach(t);
 }
 
 static int is_private(snd_rawmidi_t *h) {
