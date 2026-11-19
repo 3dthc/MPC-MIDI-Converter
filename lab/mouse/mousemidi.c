@@ -17,6 +17,7 @@
 #include <fcntl.h>
 #include <linux/input.h>
 #include <poll.h>
+#include <sys/ioctl.h>
 #include <sys/select.h>
 #include <time.h>
 #include <pthread.h>
@@ -45,6 +46,12 @@ static int shift_btn = BTN_MIDDLE, erase_btn = BTN_RIGHT;
 static int shift_latch = 1;                /* 1 latch (tap on/off), 0 hold-while-pressed */
 static int shift_timeout = 12;             /* latch auto-release after this many idle seconds (0 = never) */
 static int shift_on = 0;                   /* current latched Shift state */
+/* wheel also scrolls the view: each notch injects a one-finger touch-drag into the touchscreen (hwremap's channel).
+ * Keeps the +/- step too - harmless with nothing selected. */
+static int wheel_scroll = 1;               /* 1 on, 0 off */
+static char touch_dev[128] = "/dev/input/event0";
+static int scroll_pct = 18;                /* drag length per notch, percent of screen height */
+static int scroll_invert = 0;
 
 static void *next_sym(const char *name) {
     static void *(*libc_dlsym)(void *, const char *);
@@ -108,6 +115,10 @@ static void load_conf(void) {
         else if (!strcmp(k, "erase_btn")) erase_btn = !strcmp(v, "middle") ? BTN_MIDDLE : BTN_RIGHT;
         else if (!strcmp(k, "shift_mode")) shift_latch = !strcmp(v, "hold") ? 0 : 1;
         else if (!strcmp(k, "shift_timeout")) shift_timeout = parse_int(v);
+        else if (!strcmp(k, "wheel_scroll")) wheel_scroll = parse_int(v);
+        else if (!strcmp(k, "touch")) snprintf(touch_dev, sizeof touch_dev, "%s", v);
+        else if (!strcmp(k, "scroll_pct")) scroll_pct = parse_int(v);
+        else if (!strcmp(k, "scroll_invert")) scroll_invert = parse_int(v);
     }
     fclose(f);
 }
@@ -116,6 +127,57 @@ static void step(int dir) {   /* dir +1 up / -1 down (after invert) */
     if (invert) dir = -dir;
     if (use_cc) q3(0xB0, 0x64, dir > 0 ? 0x01 : 0x7F);   /* jog CC */
     else tap(dir > 0 ? NOTE_PLUS : NOTE_MINUS);
+}
+
+/* Inject a one-finger vertical drag into the touchscreen to scroll the view. Same device + multitouch protocol
+ * hwremap uses (write to /dev/input/event0), so MPC reads it as a real finger. Self-calibrates to the screen range. */
+static int touch_fd = -1, ts_cx, ts_cy, ts_h, ts_ok;
+static void ev_emit(int fd, int type, int code, int val) {
+    struct input_event e; memset(&e, 0, sizeof e);
+    e.type = (unsigned short)type; e.code = (unsigned short)code; e.value = val;
+    if (write(fd, &e, sizeof e) < 0) {}
+}
+static void touch_open(void) {
+    if (touch_fd >= 0) return;
+    touch_fd = open(touch_dev, O_WRONLY);
+    if (touch_fd < 0) return;
+    int rfd = open(touch_dev, O_RDONLY);
+    if (rfd >= 0) {
+        struct input_absinfo ax, ay;
+        int gx = ioctl(rfd, EVIOCGABS(ABS_MT_POSITION_X), &ax) == 0 ? 0 : ioctl(rfd, EVIOCGABS(ABS_X), &ax);
+        int gy = ioctl(rfd, EVIOCGABS(ABS_MT_POSITION_Y), &ay) == 0 ? 0 : ioctl(rfd, EVIOCGABS(ABS_Y), &ay);
+        if (gx == 0 && gy == 0 && ax.maximum > ax.minimum && ay.maximum > ay.minimum) {
+            ts_cx = (ax.minimum + ax.maximum) / 2; ts_cy = (ay.minimum + ay.maximum) / 2;
+            ts_h = ay.maximum - ay.minimum; ts_ok = 1;
+        }
+        close(rfd);
+    }
+    if (!ts_ok) { ts_cx = 360; ts_cy = 240; ts_h = 480; }   /* fallback; tune scroll_pct if the drag feels off */
+}
+static void inject_scroll(int dir) {   /* dir +1 wheel-up, -1 wheel-down */
+    static int track = 30000;
+    touch_open();
+    if (touch_fd < 0) return;
+    int dist = ts_h * scroll_pct / 100; if (dist < 1) dist = 1;
+    int sdir = ((scroll_invert ? -dir : dir) > 0) ? -1 : 1;   /* wheel up -> finger up -> content scrolls up */
+    int id = track++ & 0xffff, steps = 8;
+    ev_emit(touch_fd, EV_ABS, ABS_MT_TRACKING_ID, id);
+    ev_emit(touch_fd, EV_ABS, ABS_MT_POSITION_X, ts_cx);
+    ev_emit(touch_fd, EV_ABS, ABS_MT_POSITION_Y, ts_cy);
+    ev_emit(touch_fd, EV_KEY, BTN_TOUCH, 1);
+    ev_emit(touch_fd, EV_ABS, ABS_X, ts_cx);
+    ev_emit(touch_fd, EV_ABS, ABS_Y, ts_cy);
+    ev_emit(touch_fd, EV_SYN, SYN_REPORT, 0);
+    for (int i = 1; i <= steps; i++) {
+        int y = ts_cy + sdir * dist * i / steps;
+        ev_emit(touch_fd, EV_ABS, ABS_MT_POSITION_Y, y);
+        ev_emit(touch_fd, EV_ABS, ABS_Y, y);
+        ev_emit(touch_fd, EV_SYN, SYN_REPORT, 0);
+        struct timespec ts = {0, 8 * 1000000}; nanosleep(&ts, NULL);
+    }
+    ev_emit(touch_fd, EV_ABS, ABS_MT_TRACKING_ID, -1);
+    ev_emit(touch_fd, EV_KEY, BTN_TOUCH, 0);
+    ev_emit(touch_fd, EV_SYN, SYN_REPORT, 0);
 }
 
 static void shift_set(int on) {   /* latch: assert/release Shift, only on a real change */
@@ -145,7 +207,8 @@ static void *mouse_thread(void *arg) {
         last = time(NULL);
         if (e.type == EV_REL && e.code == REL_WHEEL) {
             int c = e.value < 0 ? -e.value : e.value, d = e.value > 0 ? 1 : -1;
-            for (int i = 0; i < c && i < 8; i++) step(d);
+            for (int i = 0; i < c && i < 8; i++) step(d);                  /* value step (+/-), inert if nothing selected */
+            if (wheel_scroll) for (int i = 0; i < c && i < 3; i++) inject_scroll(d);  /* and scroll the view */
         } else if (e.type == EV_KEY && e.code == shift_btn) {
             if (shift_latch) { if (e.value == 1) shift_set(!shift_on); }   /* tap toggles */
             else q3(0x90, NOTE_SHIFT, e.value ? 0x7F : 0x00);             /* hold while pressed */
