@@ -18,6 +18,8 @@ automatically on boot.
   tool), tune wheel acceleration, note numbers, and the tool-icon positions
 - Standard Open MPC addin: permanent across reboots, with a clean uninstall
 
-## Notes
-- Panel notes and tool-icon coordinates were captured on an MPC Live II; other models may need the tool
-  coordinates nudged in the config.
+## Compatibility
+- Two builds: armv7 (32-bit, glibc 2.17) for Gen 1 on MPC OS 2.x and 3.x; aarch64 for Gen 2 on OS 3.x.
+- Panel notes and the right-click tool-icon coordinates were captured on an MPC Live II. The mouse/button
+  control should carry across models; on a different screen size the tool-cycle coordinates (tool1..tool4 in
+  the config) may need nudging - everything is tunable live in the config, no reinstall.

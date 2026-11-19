@@ -6,7 +6,7 @@ set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 MPCTOOLS=${MPCTOOLS:-$HERE/../mpc-vst-plugins/tools}
 # gnu11 so glibc doesn't emit its C23-only fscanf/strtol symbols (keeps us under the 2.36 catalog cap)
-arm-linux-gnueabihf-gcc -std=gnu11 -shared -fPIC -O2 -Wall -Wextra \
+arm-linux-gnueabihf-gcc -std=gnu11 -D_TIME_BITS=32 -U_FORTIFY_SOURCE -shared -fPIC -O2 -Wall -Wextra \
   -o "$HERE/package/midimouse.so" "$HERE/../lab/mouse/midimouse.c" -lpthread -ldl
 rm -f "$HERE"/dist/*.zip
 python3 "$MPCTOOLS/release_addin.py" --dir "$HERE/package" --version "${1:-1.0.0}" \

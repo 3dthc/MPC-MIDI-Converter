@@ -17,6 +17,15 @@
  * The rawmidi injection (hook snd_rawmidi_open/read + poll with a wake pipe, queue bytes for MPC to read) follows
  * hwremap by mmiroshnikov (MIT, open-mpc/mpc-vst-plugins tools/mpc_patch/hwremap). This file is MIT too. */
 #define _GNU_SOURCE
+/* Pin the merged-libc (2.34) symbols to their old versions so the 32-bit build also runs on MPC OS 2.x (glibc ~2.32).
+ * Combined with -D_TIME_BITS=32 (see build.sh), this brings the armhf build down to glibc 2.17. Arm only; aarch64
+ * runs OS 3 only, where 2.34 is fine. We never pass time_t across the MPC boundary, so the 32-bit time_t is safe. */
+#if defined(__arm__) && !defined(__aarch64__)
+__asm__(".symver pthread_create,pthread_create@GLIBC_2.4");
+__asm__(".symver pthread_detach,pthread_detach@GLIBC_2.4");
+__asm__(".symver dlsym,dlsym@GLIBC_2.4");
+__asm__(".symver dlvsym,dlvsym@GLIBC_2.4");
+#endif
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <linux/input.h>
