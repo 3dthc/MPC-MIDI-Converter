@@ -47,7 +47,7 @@ static char mouse_dev[128] = "auto";       /* "auto" = read every mouse found; o
 static int NOTE_PLUS = 0x36, NOTE_MINUS = 0x37, NOTE_SHIFT = 0x31, NOTE_ERASE = 0x09;
 static int NOTE_PLAY = 0x53, NOTE_STOP = 0x51, NOTE_REC = 0x52, NOTE_MENU = 0x7B, NOTE_MAIN = 0x34;  /* captured, MPC Live II */
 static int invert = 0, use_cc = 0;         /* use_cc 1: inject jog CC B0 64 01/7F instead of +/- buttons */
-static int wheel_accel = 1;                /* 1: fast spins step more per notch, like the data wheel */
+static int wheel_accel = 3;                /* max steps per notch on a fast spin (1 = off). Higher = jumpier */
 static int shift_latch = 1;                /* 1 latch (tap on/off), 0 hold-while-pressed */
 static int shift_timeout = 12;             /* latch auto-release after this many idle seconds (0 = never) */
 static int shift_on = 0;                   /* current latched Shift state (shared across mice) */
@@ -199,11 +199,12 @@ static void *mouse_thread(void *arg) {
         if (e.type == EV_REL && e.code == REL_WHEEL) {
             int c = e.value < 0 ? -e.value : e.value, d = e.value > 0 ? 1 : -1;
             int mul = 1;
-            if (wheel_accel) {                                     /* fast spin -> bigger jumps, like the data wheel */
+            if (wheel_accel > 1) {                                 /* fast spin -> bigger jumps, scaled to wheel_accel */
                 static long last_ms = 0;
                 struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
                 long ms = t.tv_sec * 1000 + t.tv_nsec / 1000000, dt = ms - last_ms; last_ms = ms;
-                mul = dt < 35 ? 5 : dt < 70 ? 3 : dt < 140 ? 2 : 1;
+                int tier = dt < 35 ? 3 : dt < 70 ? 2 : dt < 140 ? 1 : 0;   /* 0 slow .. 3 fast */
+                mul = 1 + tier * (wheel_accel - 1) / 3;            /* 1 .. wheel_accel */
             }
             int reps = c * mul; if (reps > 16) reps = 16;
             for (int i = 0; i < reps; i++) step(d);                /* value step; inert if nothing selected */
@@ -242,9 +243,9 @@ static void scan_mice(void) {
         if (is_mouse(path)) attach(path);
     }
 }
-static void *monitor_thread(void *arg) {   /* catch a mouse plugged in after MPC started */
+static void *monitor_thread(void *arg) {   /* catch a hot-plugged mouse + apply live config edits */
     (void)arg;
-    for (;;) { sleep(2); scan_mice(); }
+    for (;;) { sleep(2); load_conf(); scan_mice(); }
     return NULL;
 }
 static void start_mouse_threads(void) {
