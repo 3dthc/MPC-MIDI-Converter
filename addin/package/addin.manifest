@@ -3,4 +3,4 @@ ADDIN_ID=midimouse
 ADDIN_NAME="MIDIMouse"
 ADDIN_SO=midimouse.so
 ADDIN_CONF=midimouse.conf
-ADDIN_DONE="MIDIMouse is on. Wheel steps values (accelerates on a fast spin); right-click = Erase; middle = Shift latch; rear side = Stop; front side = Play. Auto-detects mice, hot-plug included. Retune in /data/mpc-addins/midimouse/midimouse.conf - applies live."
+ADDIN_DONE="MIDIMouse is on. Wheel steps values; middle = Shift latch; rear side = Stop; front side = Play; right-click cycles Grid tools (pencil/eraser/select/zoom). Auto-detects mice. Retune in /data/mpc-addins/midimouse/midimouse.conf - applies live."

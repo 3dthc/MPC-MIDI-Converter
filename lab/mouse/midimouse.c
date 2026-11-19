@@ -55,15 +55,15 @@ static pthread_mutex_t shift_lock = PTHREAD_MUTEX_INITIALIZER;
 static volatile time_t last_activity = 0;
 /* per-button actions, resolved in do_button(): none | shift | erase | play | menu | main */
 static char act_middle[16]    = "shift";   /* 3-button mice reach Shift here */
-static char act_right[16]     = "erase";
+static char act_right[16]     = "tool";
 static char act_side_back[16] = "stop";    /* BTN_SIDE  - rear thumb button (5-button mice) */
 static char act_side_fwd[16]  = "play";    /* BTN_EXTRA - front thumb button (5-button mice) */
 /* "tool" action: cycle through on-screen Grid tool icons by injecting a tap at each (captured on an MPC Live II).
  * tool1 pencil, tool2 eraser, tool3 select. Coordinates are raw touchscreen units; edit toolN in the conf to retune. */
 static char touch_dev[128] = "/dev/input/event0";
-static int tool_x[8] = {165, 81, 135};
-static int tool_y[8] = {1360, 1105, 963};
-static int tool_n = 3, tool_idx = 0, touch_fd = -1;
+static int tool_x[8] = {165, 81, 135, 83};
+static int tool_y[8] = {1360, 1105, 963, 758};
+static int tool_n = 4, tool_idx = 0, touch_fd = -1;
 
 static void *next_sym(const char *name) {
     static void *(*libc_dlsym)(void *, const char *);
