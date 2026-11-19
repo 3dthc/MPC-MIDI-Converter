@@ -3,9 +3,13 @@
  * MPC reads the panel as ALSA rawmidi on a "Private" port and already reads the USB mouse for the pointer and
  * left-click (as touch). The mouse's WHEEL and RIGHT/MIDDLE buttons are ignored by MPC. This addin reads the mouse
  * as a second reader (no grab, so pointer/left-click are untouched) and injects panel MIDI into MPC's Private input:
- *   wheel        -> + / - buttons (step the selected value / scroll lists; captured notes 0x36 / 0x37 on an MPC Live)
- *   middle       -> Shift (latch by default: tap on, tap off; or set shift_mode hold)      (Shift note 0x31)
- *   right click  -> Erase                                                                 (Erase note 0x09)
+ *   wheel        -> + / - buttons (step the selected value; captured notes 0x36 / 0x37 on an MPC Live)
+ *   middle       -> Shift     (latch by default: tap on, tap off; or shift_mode hold)       (Shift note 0x31)
+ *   right click  -> Erase                                                                  (Erase note 0x09)
+ *   side back    -> Shift     (5-button mice; same latch as middle, so it frees the middle) (BTN_SIDE)
+ *   side forward -> Play                                                                   (BTN_EXTRA, note 0x53)
+ * Every button's action is configurable (none|shift|erase|play|menu|main). The mouse device is auto-detected,
+ * with a reader per mouse, so the regular and 5-button mice both work and swapping needs no config.
  * Latch exists because MPC maps all mouse buttons to one touch contact: holding a button blocks left-click, so a
  * held-Shift + left-click combo can't get through. Latching Shift leaves only the left button pressed at click time.
  * Buttons are note-on on channel 1 (0x90 note 0x7F press / 0x00 release). Overridable in /data/mousemidi.conf.
@@ -38,20 +42,21 @@ static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 static unsigned char q[QSIZE];
 static int qhead, qtail;
 
-/* config (overridable via /data/mousemidi.conf: key value per line) */
-static char mouse_dev[128] = "/dev/input/event2";
+/* config (overridable via the addin's mousemidi.conf: key value per line) */
+static char mouse_dev[128] = "auto";       /* "auto" = read every mouse found; or a specific /dev/input/eventN */
 static int NOTE_PLUS = 0x36, NOTE_MINUS = 0x37, NOTE_SHIFT = 0x31, NOTE_ERASE = 0x09;
+static int NOTE_PLAY = 0x53, NOTE_MENU = 0x7B, NOTE_MAIN = 0x34;   /* captured on an MPC Live II */
 static int invert = 0, use_cc = 0;         /* use_cc 1: inject jog CC B0 64 01/7F instead of +/- buttons */
-static int shift_btn = BTN_MIDDLE, erase_btn = BTN_RIGHT;
 static int shift_latch = 1;                /* 1 latch (tap on/off), 0 hold-while-pressed */
 static int shift_timeout = 12;             /* latch auto-release after this many idle seconds (0 = never) */
-static int shift_on = 0;                   /* current latched Shift state */
-/* wheel also scrolls the view: each notch injects a one-finger touch-drag into the touchscreen (hwremap's channel).
- * Keeps the +/- step too - harmless with nothing selected. */
-static int wheel_scroll = 0;               /* 1 on, 0 off */
-static char touch_dev[128] = "/dev/input/event0";
-static int scroll_pct = 18;                /* drag length per notch, percent of screen height */
-static int scroll_invert = 0;
+static int shift_on = 0;                   /* current latched Shift state (shared across mice) */
+static pthread_mutex_t shift_lock = PTHREAD_MUTEX_INITIALIZER;
+static volatile time_t last_activity = 0;
+/* per-button actions, resolved in do_button(): none | shift | erase | play | menu | main */
+static char act_middle[16]    = "shift";   /* 3-button mice reach Shift here */
+static char act_right[16]     = "erase";
+static char act_side_back[16] = "shift";   /* BTN_SIDE  - rear thumb button (5-button mice) */
+static char act_side_fwd[16]  = "play";    /* BTN_EXTRA - front thumb button (5-button mice) */
 
 static void *next_sym(const char *name) {
     static void *(*libc_dlsym)(void *, const char *);
@@ -107,18 +112,19 @@ static void load_conf(void) {
         if (!strcmp(k, "mouse")) snprintf(mouse_dev, sizeof mouse_dev, "%s", v);
         else if (!strcmp(k, "plus")) NOTE_PLUS = parse_int(v);
         else if (!strcmp(k, "minus")) NOTE_MINUS = parse_int(v);
-        else if (!strcmp(k, "shift")) NOTE_SHIFT = parse_int(v);
-        else if (!strcmp(k, "erase")) NOTE_ERASE = parse_int(v);
+        else if (!strcmp(k, "note_shift")) NOTE_SHIFT = parse_int(v);
+        else if (!strcmp(k, "note_erase")) NOTE_ERASE = parse_int(v);
+        else if (!strcmp(k, "note_play")) NOTE_PLAY = parse_int(v);
+        else if (!strcmp(k, "note_menu")) NOTE_MENU = parse_int(v);
+        else if (!strcmp(k, "note_main")) NOTE_MAIN = parse_int(v);
         else if (!strcmp(k, "invert")) invert = parse_int(v);
         else if (!strcmp(k, "cc")) use_cc = parse_int(v);
-        else if (!strcmp(k, "shift_btn")) shift_btn = !strcmp(v, "right") ? BTN_RIGHT : BTN_MIDDLE;
-        else if (!strcmp(k, "erase_btn")) erase_btn = !strcmp(v, "middle") ? BTN_MIDDLE : BTN_RIGHT;
         else if (!strcmp(k, "shift_mode")) shift_latch = !strcmp(v, "hold") ? 0 : 1;
         else if (!strcmp(k, "shift_timeout")) shift_timeout = parse_int(v);
-        else if (!strcmp(k, "wheel_scroll")) wheel_scroll = parse_int(v);
-        else if (!strcmp(k, "touch")) snprintf(touch_dev, sizeof touch_dev, "%s", v);
-        else if (!strcmp(k, "scroll_pct")) scroll_pct = parse_int(v);
-        else if (!strcmp(k, "scroll_invert")) scroll_invert = parse_int(v);
+        else if (!strcmp(k, "btn_middle")) snprintf(act_middle, sizeof act_middle, "%s", v);
+        else if (!strcmp(k, "btn_right")) snprintf(act_right, sizeof act_right, "%s", v);
+        else if (!strcmp(k, "btn_side_back")) snprintf(act_side_back, sizeof act_side_back, "%s", v);
+        else if (!strcmp(k, "btn_side_fwd")) snprintf(act_side_fwd, sizeof act_side_fwd, "%s", v);
     }
     fclose(f);
 }
@@ -129,94 +135,96 @@ static void step(int dir) {   /* dir +1 up / -1 down (after invert) */
     else tap(dir > 0 ? NOTE_PLUS : NOTE_MINUS);
 }
 
-/* Inject a one-finger vertical drag into the touchscreen to scroll the view. Same device + multitouch protocol
- * hwremap uses (write to /dev/input/event0), so MPC reads it as a real finger. Self-calibrates to the screen range. */
-static int touch_fd = -1, ts_cx, ts_cy, ts_h, ts_ok;
-static void ev_emit(int fd, int type, int code, int val) {
-    struct input_event e; memset(&e, 0, sizeof e);
-    e.type = (unsigned short)type; e.code = (unsigned short)code; e.value = val;
-    if (write(fd, &e, sizeof e) < 0) {}
-}
-static void touch_open(void) {
-    if (touch_fd >= 0) return;
-    touch_fd = open(touch_dev, O_WRONLY);
-    if (touch_fd < 0) return;
-    int rfd = open(touch_dev, O_RDONLY);
-    if (rfd >= 0) {
-        struct input_absinfo ax, ay;
-        int gx = ioctl(rfd, EVIOCGABS(ABS_MT_POSITION_X), &ax) == 0 ? 0 : ioctl(rfd, EVIOCGABS(ABS_X), &ax);
-        int gy = ioctl(rfd, EVIOCGABS(ABS_MT_POSITION_Y), &ay) == 0 ? 0 : ioctl(rfd, EVIOCGABS(ABS_Y), &ay);
-        if (gx == 0 && gy == 0 && ax.maximum > ax.minimum && ay.maximum > ay.minimum) {
-            ts_cx = (ax.minimum + ax.maximum) / 2; ts_cy = (ay.minimum + ay.maximum) / 2;
-            ts_h = ay.maximum - ay.minimum; ts_ok = 1;
-        }
-        close(rfd);
-    }
-    if (!ts_ok) { ts_cx = 360; ts_cy = 240; ts_h = 480; }   /* fallback; tune scroll_pct if the drag feels off */
-}
-static void inject_scroll(int dir) {   /* dir +1 wheel-up, -1 wheel-down */
-    static int track = 30000;
-    touch_open();
-    if (touch_fd < 0) return;
-    int dist = ts_h * scroll_pct / 100; if (dist < 1) dist = 1;
-    int sdir = ((scroll_invert ? -dir : dir) > 0) ? -1 : 1;   /* wheel up -> finger up -> content scrolls up */
-    int id = track++ & 0xffff, steps = 8;
-    ev_emit(touch_fd, EV_ABS, ABS_MT_TRACKING_ID, id);
-    ev_emit(touch_fd, EV_ABS, ABS_MT_POSITION_X, ts_cx);
-    ev_emit(touch_fd, EV_ABS, ABS_MT_POSITION_Y, ts_cy);
-    ev_emit(touch_fd, EV_KEY, BTN_TOUCH, 1);
-    ev_emit(touch_fd, EV_ABS, ABS_X, ts_cx);
-    ev_emit(touch_fd, EV_ABS, ABS_Y, ts_cy);
-    ev_emit(touch_fd, EV_SYN, SYN_REPORT, 0);
-    for (int i = 1; i <= steps; i++) {
-        int y = ts_cy + sdir * dist * i / steps;
-        ev_emit(touch_fd, EV_ABS, ABS_MT_POSITION_Y, y);
-        ev_emit(touch_fd, EV_ABS, ABS_Y, y);
-        ev_emit(touch_fd, EV_SYN, SYN_REPORT, 0);
-        struct timespec ts = {0, 8 * 1000000}; nanosleep(&ts, NULL);
-    }
-    ev_emit(touch_fd, EV_ABS, ABS_MT_TRACKING_ID, -1);
-    ev_emit(touch_fd, EV_KEY, BTN_TOUCH, 0);
-    ev_emit(touch_fd, EV_SYN, SYN_REPORT, 0);
+static void shift_set(int on) {   /* latch: assert/release Shift once, shared across every mouse thread */
+    pthread_mutex_lock(&shift_lock);
+    int change = (on != shift_on);
+    if (change) shift_on = on;
+    pthread_mutex_unlock(&shift_lock);
+    if (change) q3(0x90, NOTE_SHIFT, on ? 0x7F : 0x00);
 }
 
-static void shift_set(int on) {   /* latch: assert/release Shift, only on a real change */
-    if (on == shift_on) return;
-    shift_on = on;
-    q3(0x90, NOTE_SHIFT, on ? 0x7F : 0x00);
+/* run a button's configured action. pressed = 1 on press, 0 on release. */
+static void do_button(const char *act, int pressed) {
+    if (!strcmp(act, "none")) return;
+    if (!strcmp(act, "shift")) {
+        if (shift_latch) { if (pressed) shift_set(!shift_on); }   /* tap toggles */
+        else q3(0x90, NOTE_SHIFT, pressed ? 0x7F : 0x00);         /* hold while pressed */
+        return;
+    }
+    if (!pressed) return;                                          /* tap actions fire on press only */
+    int note = !strcmp(act, "erase") ? NOTE_ERASE
+             : !strcmp(act, "play")  ? NOTE_PLAY
+             : !strcmp(act, "menu")  ? NOTE_MENU
+             : !strcmp(act, "main")  ? NOTE_MAIN : -1;
+    if (note >= 0) tap(note);
+}
+
+/* a device is a mouse if it reports pointer motion (EV_REL/REL_X) and a left button */
+static int is_mouse(const char *path) {
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) return 0;
+    unsigned long rel = 0, key[(KEY_MAX / (8 * sizeof(long))) + 1];
+    memset(key, 0, sizeof key);
+    int ok = ioctl(fd, EVIOCGBIT(EV_REL, sizeof rel), &rel) >= 0 && (rel & (1UL << REL_X))
+          && ioctl(fd, EVIOCGBIT(EV_KEY, sizeof key), key) >= 0
+          && (key[BTN_LEFT / (8 * sizeof(long))] & (1UL << (BTN_LEFT % (8 * sizeof(long)))));
+    close(fd);
+    return ok;
 }
 
 static void *mouse_thread(void *arg) {
-    (void)arg;
+    char *path = arg;
     int fd = -1;
-    time_t last = 0;
     for (;;) {
-        if (fd < 0) { fd = open(mouse_dev, O_RDONLY); if (fd < 0) { sleep(2); continue; } }
+        if (fd < 0) { fd = open(path, O_RDONLY); if (fd < 0) { sleep(2); continue; } }
         fd_set r; FD_ZERO(&r); FD_SET(fd, &r);
         struct timeval tv = {1, 0};   /* tick once a second only while a latch could time out */
         int sel = select(fd + 1, &r, NULL, NULL,
                          (shift_latch && shift_on && shift_timeout > 0) ? &tv : NULL);
-        if (sel == 0) {   /* timed out with Shift latched and idle -> release it */
-            if (last && time(NULL) - last >= shift_timeout) shift_set(0);
+        if (sel == 0) {   /* idle tick: release a latched Shift that has timed out */
+            if (last_activity && time(NULL) - last_activity >= shift_timeout) shift_set(0);
             continue;
         }
         if (sel < 0) continue;
         struct input_event e;
         ssize_t n = read(fd, &e, sizeof e);
         if (n != (ssize_t)sizeof e) { close(fd); fd = -1; sleep(1); continue; }
-        last = time(NULL);
+        last_activity = time(NULL);
         if (e.type == EV_REL && e.code == REL_WHEEL) {
             int c = e.value < 0 ? -e.value : e.value, d = e.value > 0 ? 1 : -1;
-            for (int i = 0; i < c && i < 8; i++) step(d);                  /* value step (+/-), inert if nothing selected */
-            if (wheel_scroll) for (int i = 0; i < c && i < 3; i++) inject_scroll(d);  /* and scroll the view */
-        } else if (e.type == EV_KEY && e.code == shift_btn) {
-            if (shift_latch) { if (e.value == 1) shift_set(!shift_on); }   /* tap toggles */
-            else q3(0x90, NOTE_SHIFT, e.value ? 0x7F : 0x00);             /* hold while pressed */
-        } else if (e.type == EV_KEY && e.code == erase_btn && e.value == 1) {
-            tap(NOTE_ERASE);
+            for (int i = 0; i < c && i < 8; i++) step(d);          /* value step; inert if nothing selected */
+        } else if (e.type == EV_KEY && e.value != 2) {             /* ignore key autorepeat (value 2) */
+            int pressed = e.value ? 1 : 0;
+            switch (e.code) {
+                case BTN_MIDDLE: do_button(act_middle, pressed); break;
+                case BTN_RIGHT:  do_button(act_right, pressed); break;
+                case BTN_SIDE:   do_button(act_side_back, pressed); break;
+                case BTN_EXTRA:  do_button(act_side_fwd, pressed); break;
+                default: break;
+            }
         }
     }
     return NULL;
+}
+
+static void start_mouse_threads(void) {   /* one reader per mouse, so both mice work and swapping needs nothing */
+    pthread_t t;
+    if (strcmp(mouse_dev, "auto")) {       /* explicit device path */
+        char *p = strdup(mouse_dev);
+        if (p) { pthread_create(&t, NULL, mouse_thread, p); pthread_detach(t); }
+        return;
+    }
+    int found = 0;
+    for (int i = 0; i < 32; i++) {
+        char path[32]; snprintf(path, sizeof path, "/dev/input/event%d", i);
+        if (!is_mouse(path)) continue;
+        char *p = strdup(path);
+        if (p) { pthread_create(&t, NULL, mouse_thread, p); pthread_detach(t); found++; }
+    }
+    if (!found) {                          /* nothing detected: fall back to the usual node */
+        char *p = strdup("/dev/input/event2");
+        if (p) { pthread_create(&t, NULL, mouse_thread, p); pthread_detach(t); }
+    }
 }
 
 static int is_private(snd_rawmidi_t *h) {
@@ -243,7 +251,7 @@ int snd_rawmidi_open(snd_rawmidi_t **in, snd_rawmidi_t **out, const char *name, 
         priv_fd = (pdesc && pdesc(*in, &pfd, 1) == 1) ? pfd.fd : -1;
         if (wake_fd[0] < 0 && pipe2(wake_fd, O_NONBLOCK | O_CLOEXEC) != 0) wake_fd[0] = wake_fd[1] = -1;
         load_conf();
-        pthread_t t; pthread_create(&t, NULL, mouse_thread, NULL); pthread_detach(t);
+        start_mouse_threads();
     }
     return r;
 }

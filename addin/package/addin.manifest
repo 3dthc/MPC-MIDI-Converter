@@ -3,4 +3,4 @@ ADDIN_ID=mousemidi
 ADDIN_NAME="MouseMIDI"
 ADDIN_SO=mousemidi.so
 ADDIN_CONF=mousemidi.conf
-ADDIN_DONE="MouseMIDI is on. Wheel steps values; right-click = Erase; tap the middle button to latch Shift (then left-click menu options). Retune in /data/mpc-addins/mousemidi/mousemidi.conf - no reinstall."
+ADDIN_DONE="MouseMIDI is on. Wheel steps values; right-click = Erase; middle or rear side button = Shift latch; front side button = Play. Auto-detects your mouse. Retune in /data/mpc-addins/mousemidi/mousemidi.conf - no reinstall."
