@@ -58,6 +58,12 @@ static char act_middle[16]    = "shift";   /* 3-button mice reach Shift here */
 static char act_right[16]     = "erase";
 static char act_side_back[16] = "stop";    /* BTN_SIDE  - rear thumb button (5-button mice) */
 static char act_side_fwd[16]  = "play";    /* BTN_EXTRA - front thumb button (5-button mice) */
+/* "tool" action: cycle through on-screen Grid tool icons by injecting a tap at each (captured on an MPC Live II).
+ * tool1 pencil, tool2 eraser, tool3 select. Coordinates are raw touchscreen units; edit toolN in the conf to retune. */
+static char touch_dev[128] = "/dev/input/event0";
+static int tool_x[8] = {165, 81, 135};
+static int tool_y[8] = {1360, 1105, 963};
+static int tool_n = 3, tool_idx = 0, touch_fd = -1;
 
 static void *next_sym(const char *name) {
     static void *(*libc_dlsym)(void *, const char *);
@@ -129,6 +135,12 @@ static void load_conf(void) {
         else if (!strcmp(k, "btn_right")) snprintf(act_right, sizeof act_right, "%s", v);
         else if (!strcmp(k, "btn_side_back")) snprintf(act_side_back, sizeof act_side_back, "%s", v);
         else if (!strcmp(k, "btn_side_fwd")) snprintf(act_side_fwd, sizeof act_side_fwd, "%s", v);
+        else if (!strcmp(k, "touch")) snprintf(touch_dev, sizeof touch_dev, "%s", v);
+        else if (k[0]=='t' && k[1]=='o' && k[2]=='o' && k[3]=='l' && k[4]>='1' && k[4]<='8' && k[5]==0) {
+            int n = k[4] - '1'; char *comma = strchr(v, ',');
+            if (comma) { *comma = 0; tool_x[n] = parse_int(v); tool_y[n] = parse_int(comma + 1);
+                         if (n + 1 > tool_n) tool_n = n + 1; }
+        }
     }
     fclose(f);
 }
@@ -147,6 +159,30 @@ static void shift_set(int on) {   /* latch: assert/release Shift once, shared ac
     if (change) q3(0x90, NOTE_SHIFT, on ? 0x7F : 0x00);
 }
 
+static void ev_emit(int fd, int type, int code, int val) {
+    struct input_event e; memset(&e, 0, sizeof e);
+    e.type = (unsigned short)type; e.code = (unsigned short)code; e.value = val;
+    if (write(fd, &e, sizeof e) < 0) {}
+}
+/* inject a single touch tap at a raw screen coordinate (how hwremap taps menu items) */
+static void inject_tap(int x, int y) {
+    static int id = 22000;
+    if (touch_fd < 0) touch_fd = open(touch_dev, O_WRONLY);
+    if (touch_fd < 0) return;
+    int tid = id++ & 0xffff;
+    ev_emit(touch_fd, EV_ABS, ABS_MT_TRACKING_ID, tid);
+    ev_emit(touch_fd, EV_ABS, ABS_MT_POSITION_X, x);
+    ev_emit(touch_fd, EV_ABS, ABS_MT_POSITION_Y, y);
+    ev_emit(touch_fd, EV_KEY, BTN_TOUCH, 1);
+    ev_emit(touch_fd, EV_ABS, ABS_X, x);
+    ev_emit(touch_fd, EV_ABS, ABS_Y, y);
+    ev_emit(touch_fd, EV_SYN, SYN_REPORT, 0);
+    struct timespec ts = {0, 30 * 1000000}; nanosleep(&ts, NULL);   /* ~30ms contact */
+    ev_emit(touch_fd, EV_ABS, ABS_MT_TRACKING_ID, -1);
+    ev_emit(touch_fd, EV_KEY, BTN_TOUCH, 0);
+    ev_emit(touch_fd, EV_SYN, SYN_REPORT, 0);
+}
+
 /* run a button's configured action. pressed = 1 on press, 0 on release. */
 static void do_button(const char *act, int pressed) {
     if (!strcmp(act, "none")) return;
@@ -156,6 +192,15 @@ static void do_button(const char *act, int pressed) {
         return;
     }
     if (!pressed) return;                                          /* tap actions fire on press only */
+    if (!strcmp(act, "tool")) {                                    /* cycle Grid tools: tap the next icon */
+        if (tool_n > 0) {
+            pthread_mutex_lock(&shift_lock);
+            int i = tool_idx; tool_idx = (tool_idx + 1) % tool_n;
+            pthread_mutex_unlock(&shift_lock);
+            inject_tap(tool_x[i], tool_y[i]);
+        }
+        return;
+    }
     int note = !strcmp(act, "erase") ? NOTE_ERASE
              : !strcmp(act, "play")  ? NOTE_PLAY
              : !strcmp(act, "stop")  ? NOTE_STOP
