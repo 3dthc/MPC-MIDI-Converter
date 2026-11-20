@@ -3,4 +3,5 @@ ADDIN_ID=midimouse
 ADDIN_NAME="MIDIMouse"
 ADDIN_SO=midimouse.so
 ADDIN_CONF=midimouse.conf
+ADDIN_FILES=SETTINGS.md
 ADDIN_DONE="MIDIMouse is on. Wheel steps values; middle = Shift latch; rear side = Stop; front side = Play; right-click cycles Grid tools (pencil/eraser/select/zoom). Auto-detects mice. Retune in /data/mpc-addins/midimouse/midimouse.conf - applies live."
